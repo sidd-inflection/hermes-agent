@@ -599,6 +599,7 @@ def init_agent(
     gateway_session_key: str = None,
     skip_context_files: bool = False,
     load_soul_identity: bool = False,
+    suppress_host_context: bool = False,
     skip_memory: bool = False,
     skip_background_review: bool = False,
     session_db=None,
@@ -662,6 +663,10 @@ def init_agent(
         load_soul_identity (bool): If True, still use ~/.hermes/SOUL.md as the primary
             identity even when skip_context_files=True. Project context files from the cwd
             remain skipped.
+        suppress_host_context (bool): If True, omit the host OS/home-directory/cwd block
+            and the "Active Hermes profile:" paragraph from the system prompt. For embedders
+            (e.g. Grid) that run Hermes as a component inside their own product and don't
+            want the underlying host machine's environment surfaced to end users.
     """
     _install_safe_stdio()
 
@@ -693,6 +698,7 @@ def init_agent(
     agent.memory_notifications = "on"  # Memory update notifications: "off", "on", "verbose"
     agent.skip_context_files = skip_context_files
     agent.load_soul_identity = load_soul_identity
+    agent.suppress_host_context = suppress_host_context
     # Background review (memory/skill) opt-out switch. When True, skips the
     # _spawn_background_review fork at end-of-turn -- avoids ~30K tokens /
     # event of extra LLM cost on cron-style sessions where review forks
@@ -2034,6 +2040,12 @@ def init_agent(
     # applies to ALL models, not just the model families enforcement
     # targets.
     agent._task_completion_guidance = bool(_agent_section.get("task_completion_guidance", True))
+
+    # Product help-guidance banner toggle ("You run on Hermes Agent...").
+    # Default True. Embedders that ship their own SOUL.md and don't want to
+    # name the underlying agent product to end users set
+    # ``agent.product_help_guidance: false`` to drop it.
+    agent._product_help_guidance = bool(_agent_section.get("product_help_guidance", True))
 
     # Universal parallel-tool-call guidance toggle.  Default True.  Separate
     # flag from task_completion_guidance because a user may want one but not

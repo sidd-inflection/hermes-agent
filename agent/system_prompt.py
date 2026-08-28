@@ -33,6 +33,7 @@ from typing import Any, Dict, List, Optional
 
 from agent.prompt_builder import (
     DEFAULT_AGENT_IDENTITY,
+    DEFAULT_AGENT_IDENTITY_UNBRANDED,
     EXECUTION_GUIDANCE_MODELS,
     GOOGLE_MODEL_OPERATIONAL_GUIDANCE,
     HERMES_AGENT_HELP_GUIDANCE,
@@ -389,18 +390,27 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
             _soul_loaded = True
 
     if not _soul_loaded:
-        # Fallback to hardcoded identity
-        stable_parts.append(DEFAULT_AGENT_IDENTITY)
+        # Fallback to hardcoded identity. When product_help_guidance is off
+        # (embedders that don't want another company's product named to end
+        # users), drop the "created by Nous Research" attribution too.
+        stable_parts.append(
+            DEFAULT_AGENT_IDENTITY if getattr(agent, "_product_help_guidance", True)
+            else DEFAULT_AGENT_IDENTITY_UNBRANDED
+        )
 
     # Pointer to the hermes-agent skill + docs for user questions about Hermes
     # itself. When the session has no skill tools (Blank Slate with the skills
     # toolset off), skill_view() would be a dangling reference — inject the
     # docs-only variant instead. Toolset is fixed per-session, so cache-safe.
-    _has_skill_view = "skill_view" in (agent.valid_tool_names or set())
-    stable_parts.append(
-        HERMES_AGENT_HELP_GUIDANCE if _has_skill_view
-        else HERMES_AGENT_HELP_GUIDANCE_NO_SKILLS
-    )
+    # Gated by config ``agent.product_help_guidance`` (default True) — embedders
+    # that ship their own identity/help surface turn this off so the underlying
+    # agent product is never named to end users.
+    if getattr(agent, "_product_help_guidance", True):
+        _has_skill_view = "skill_view" in (agent.valid_tool_names or set())
+        stable_parts.append(
+            HERMES_AGENT_HELP_GUIDANCE if _has_skill_view
+            else HERMES_AGENT_HELP_GUIDANCE_NO_SKILLS
+        )
 
     # Universal task-completion / no-fabrication guidance.  Applied to ALL
     # models regardless of tool_use_enforcement gating — the failure modes
@@ -568,10 +578,12 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
 
     # Environment hints (WSL, Termux, etc.) — tell the agent about the
     # execution environment so it can translate paths and adapt behavior.
-    # Stable for the lifetime of the process.
-    _env_hints = _r.build_environment_hints()
-    if _env_hints:
-        stable_parts.append(_env_hints)
+    # Stable for the lifetime of the process. Suppressed for embedders that
+    # don't want the host machine's OS/home/cwd surfaced (suppress_host_context).
+    if not getattr(agent, "suppress_host_context", False):
+        _env_hints = _r.build_environment_hints()
+        if _env_hints:
+            stable_parts.append(_env_hints)
 
     # Coding posture (base Hermes, any interactive coding surface in a code
     # workspace — see agent/coding_context.py). Keep the operating brief in
@@ -666,62 +678,65 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
     # See file_safety._resolve_active_profile_name + classify_cross_profile_target
     # for the matching tool-side guard.
     #
-    # Resolve from the agent's OWN home first (its session_db path), not the
-    # ambient HERMES_HOME: on a build thread that lost the ContextVar this
-    # line would otherwise print "default" for a bot profile — the same
-    # thread-fallback bug that leaked default's skills index.
-    _agent_home_path = _agent_home(agent)
-    active_profile = "default"
-    try:
-        if _agent_home_path is not None:
-            active_profile = _profile_name_for_home(_agent_home_path)
-        else:
-            from agent.file_safety import _resolve_active_profile_name
-            active_profile = _resolve_active_profile_name()
-    except Exception:
+    # Suppressed for embedders that don't want the host Hermes profile
+    # layout surfaced (suppress_host_context).
+    if not getattr(agent, "suppress_host_context", False):
+        # Resolve from the agent's OWN home first (its session_db path), not the
+        # ambient HERMES_HOME: on a build thread that lost the ContextVar this
+        # line would otherwise print "default" for a bot profile — the same
+        # thread-fallback bug that leaked default's skills index.
+        _agent_home_path = _agent_home(agent)
         active_profile = "default"
-    # Home string for the message text: prefer the agent's own home so the
-    # paths named match the profile just resolved. When we have an explicit
-    # agent home, the root (where the default profile's data lives) comes
-    # from get_default_hermes_root(): get_hermes_home() on a bound profile
-    # session is the PROFILE dir, which would misname the default profile's
-    # paths. Without an agent home, keep the ambient resolution byte-identical
-    # to the legacy behavior (and patchable via this module's get_hermes_home).
-    if _agent_home_path is not None:
-        _home_str = str(_agent_home_path)
-        _root_str = str(get_default_hermes_root())
-    else:
-        _home_str = _root_str = str(get_hermes_home())
-    if active_profile == "default":
-        post_workspace_parts.append(
-            "Active Hermes profile: default. Other profiles (if any) live "
-            "under " + _root_str + "/profiles/<name>/. Each profile has its own "
-            "skills/, plugins/, cron/, and memories/ that affect a different "
-            "session than this one. Do not modify another profile's "
-            "skills/plugins/cron/memories unless the user explicitly directs "
-            "you to."
-        )
-    else:
-        # A non-default name is only ever returned when the resolved home is
-        # ALREADY <root>/profiles/<name> — that is exactly how both
-        # _profile_name_for_home() and _resolve_active_profile_name() derive
-        # it. So the profile home is the session home itself; appending
-        # /profiles/<name> again doubled it (#72894). The default profile's
-        # data sits at the ROOT (get_default_hermes_root()), which in ambient
-        # profile mode is NOT get_hermes_home().
-        profile_home = _home_str
-        default_root = get_default_hermes_root()
-        post_workspace_parts.append(
-            f"Active Hermes profile: {active_profile}. This session reads "
-            f"and writes {profile_home}/. The default "
-            f"profile's data lives at {default_root}/skills/, {default_root}/plugins/, "
-            f"{default_root}/cron/, {default_root}/memories/ — those belong to a "
-            f"different session run from a different shell. Do NOT modify "
-            f"another profile's skills/plugins/cron/memories unless the user "
-            f"explicitly directs you to. The cross-profile write guard will "
-            f"refuse such writes by default; pass cross_profile=True only "
-            f"after explicit direction."
-        )
+        try:
+            if _agent_home_path is not None:
+                active_profile = _profile_name_for_home(_agent_home_path)
+            else:
+                from agent.file_safety import _resolve_active_profile_name
+                active_profile = _resolve_active_profile_name()
+        except Exception:
+            active_profile = "default"
+        # Home string for the message text: prefer the agent's own home so the
+        # paths named match the profile just resolved. When we have an explicit
+        # agent home, the root (where the default profile's data lives) comes
+        # from get_default_hermes_root(): get_hermes_home() on a bound profile
+        # session is the PROFILE dir, which would misname the default profile's
+        # paths. Without an agent home, keep the ambient resolution byte-identical
+        # to the legacy behavior (and patchable via this module's get_hermes_home).
+        if _agent_home_path is not None:
+            _home_str = str(_agent_home_path)
+            _root_str = str(get_default_hermes_root())
+        else:
+            _home_str = _root_str = str(get_hermes_home())
+        if active_profile == "default":
+            post_workspace_parts.append(
+                "Active Hermes profile: default. Other profiles (if any) live "
+                "under " + _root_str + "/profiles/<name>/. Each profile has its own "
+                "skills/, plugins/, cron/, and memories/ that affect a different "
+                "session than this one. Do not modify another profile's "
+                "skills/plugins/cron/memories unless the user explicitly directs "
+                "you to."
+            )
+        else:
+            # A non-default name is only ever returned when the resolved home is
+            # ALREADY <root>/profiles/<name> — that is exactly how both
+            # _profile_name_for_home() and _resolve_active_profile_name() derive
+            # it. So the profile home is the session home itself; appending
+            # /profiles/<name> again doubled it (#72894). The default profile's
+            # data sits at the ROOT (get_default_hermes_root()), which in ambient
+            # profile mode is NOT get_hermes_home().
+            profile_home = _home_str
+            default_root = get_default_hermes_root()
+            post_workspace_parts.append(
+                f"Active Hermes profile: {active_profile}. This session reads "
+                f"and writes {profile_home}/. The default "
+                f"profile's data lives at {default_root}/skills/, {default_root}/plugins/, "
+                f"{default_root}/cron/, {default_root}/memories/ — those belong to a "
+                f"different session run from a different shell. Do NOT modify "
+                f"another profile's skills/plugins/cron/memories unless the user "
+                f"explicitly directs you to. The cross-profile write guard will "
+                f"refuse such writes by default; pass cross_profile=True only "
+                f"after explicit direction."
+            )
 
     platform_key = (agent.platform or "").lower().strip()
     # Resolve the built-in/plugin default hint for this platform, then apply

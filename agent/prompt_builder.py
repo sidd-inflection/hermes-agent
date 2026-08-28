@@ -147,8 +147,13 @@ def _strip_yaml_frontmatter(content: str) -> str:
 # Constants
 # =========================================================================
 
-DEFAULT_AGENT_IDENTITY = (
-    "You are Hermes Agent, an intelligent AI assistant created by Nous Research. "
+# Product-name indirection: embedders that run Hermes as a component inside
+# their own product (e.g. Grid/"Pi") set HERMES_PRODUCT_NAME so degraded
+# paths (fallback identity below) don't name another company's product to
+# their end users. Unset by default so behavior/bytes are unchanged upstream.
+PRODUCT_NAME = os.environ.get("HERMES_PRODUCT_NAME", "Hermes Agent")
+
+_DEFAULT_AGENT_IDENTITY_BODY = (
     "You are helpful, knowledgeable, and direct. You assist users with a wide "
     "range of tasks including answering questions, writing and editing code, "
     "analyzing information, creative work, and executing actions via your tools. "
@@ -157,8 +162,20 @@ DEFAULT_AGENT_IDENTITY = (
     "Be targeted and efficient in your exploration and investigations."
 )
 
+DEFAULT_AGENT_IDENTITY = (
+    f"You are {PRODUCT_NAME}, an intelligent AI assistant created by Nous Research. "
+    + _DEFAULT_AGENT_IDENTITY_BODY
+)
+
+# Variant used when agent.product_help_guidance=False (config) — degraded
+# fallback identity that drops the "created by Nous Research" attribution.
+DEFAULT_AGENT_IDENTITY_UNBRANDED = (
+    f"You are {PRODUCT_NAME}, an intelligent AI assistant. "
+    + _DEFAULT_AGENT_IDENTITY_BODY
+)
+
 HERMES_AGENT_HELP_GUIDANCE = (
-    "You run on Hermes Agent (by Nous Research). When the user needs help with "
+    f"You run on {PRODUCT_NAME} (by Nous Research). When the user needs help with "
     "Hermes itself — configuring, setting up, using, extending, or troubleshooting "
     "it — or when you need to understand your own features, tools, or capabilities, "
     "the documentation at https://hermes-agent.nousresearch.com/docs is your "
@@ -173,7 +190,7 @@ HERMES_AGENT_HELP_GUIDANCE = (
 # model at skill_view() there would be a dangling reference — the docs URL is
 # the only actionable pointer.
 HERMES_AGENT_HELP_GUIDANCE_NO_SKILLS = (
-    "You run on Hermes Agent (by Nous Research). When the user needs help with "
+    f"You run on {PRODUCT_NAME} (by Nous Research). When the user needs help with "
     "Hermes itself — configuring, setting up, using, extending, or troubleshooting "
     "it — or when you need to understand your own features, tools, or capabilities, "
     "the documentation at https://hermes-agent.nousresearch.com/docs is the "
