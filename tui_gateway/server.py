@@ -1108,7 +1108,24 @@ def _teardown_session(session: dict | None, *, end_reason: str = "tui_close") ->
     try:
         agent = session.get("agent")
         if agent is not None and hasattr(agent, "close"):
-            agent.close()
+            # end_session=not running: idle_timeout/lru_evict only ever
+            # reach here with running False (both gate on it before
+            # popping), so they still finalize as before. ws_orphan_reap's
+            # force-reap branch (_reap(), "turn did not settle after N
+            # interrupt polls") can pop a session while running is still
+            # True and its _run_thread is genuinely still inside
+            # run_conversation() on this session_id — finalizing there
+            # races the live thread's own end_turn/relay calls. Traced:
+            # end_turn's own scope-close swallows the resulting
+            # "session is closing" RuntimeError and just logs a warning
+            # (agent/relay_runtime.py _close_scope_handle, ~:1020-1037), so
+            # that call is provably safe either way. Mid-turn Relay calls
+            # go through the module-level run_in_session() helper instead,
+            # which re-fetches get_session() and silently recreates the
+            # session via ensure_session() rather than raising — not
+            # provably safe to finalize under, so opt out on the
+            # precautionary principle for this one path.
+            agent.close(end_session=not session.get("running"))
     except Exception:
         pass
     # NOTE: the slash-worker is closed inside _finalize_session (the single

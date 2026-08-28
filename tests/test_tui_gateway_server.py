@@ -4528,6 +4528,32 @@ def test_session_close_commits_memory_and_fires_finalize_hook(monkeypatch):
         server._sessions.pop("sid", None)
 
 
+def test_teardown_session_force_reaped_while_running_does_not_finalize_relay(monkeypatch):
+    """#85578's force-reap branch can pop a session whose _run_thread is still
+    inside run_conversation() on this session_id (running stays True — only
+    the interrupt-settled path clears it). Finalizing the Relay session out
+    from under that live thread is not provably safe; close() must be told
+    to skip it."""
+    agent = types.SimpleNamespace(session_id="midturn-sid", close=Mock())
+    session = _session(agent=agent, running=True)
+
+    server._teardown_session(session, end_reason="ws_orphan_reap")
+
+    agent.close.assert_called_once_with(end_session=False)
+
+
+def test_teardown_session_idle_reclaim_still_finalizes_relay(monkeypatch):
+    """idle_timeout / lru_evict only ever reach teardown with running False
+    (both gate on it before popping) — those must keep finalizing exactly as
+    before this fix."""
+    agent = types.SimpleNamespace(session_id="idle-sid", close=Mock())
+    session = _session(agent=agent, running=False)
+
+    server._teardown_session(session, end_reason="idle_timeout")
+
+    agent.close.assert_called_once_with(end_session=True)
+
+
 def test_session_close_releases_resume_lock_before_slow_teardown(monkeypatch):
     """One slow session finalizer must not stall unrelated session.resume RPCs."""
     teardown_started = threading.Event()
@@ -17550,7 +17576,7 @@ def test_close_session_by_id_is_idempotent_and_full(monkeypatch):
             calls["worker"] += 1
 
     class A:
-        def close(self):
+        def close(self, end_session=True):
             calls["agent"] += 1
 
     def _fake_finalize(s, end_reason="tui_close"):

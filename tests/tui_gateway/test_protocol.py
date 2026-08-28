@@ -69,7 +69,7 @@ def test_shared_fixture_cleanup_uses_full_session_teardown(server, monkeypatch):
         def __init__(self, key):
             self.key = key
 
-        def close(self):
+        def close(self, end_session=True):
             closed[self.key] += 1
 
     class _Lease:
