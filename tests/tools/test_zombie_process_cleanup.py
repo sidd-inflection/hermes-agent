@@ -180,7 +180,12 @@ class TestAgentCloseMethod:
             mock_cleanup_cua.assert_not_called()
 
     def test_close_propagates_to_children(self):
-        """close() should call close() on all active child agents."""
+        """close() should call close() on all active child agents.
+
+        end_session=False: a child's Relay session is owned by the delegate
+        turn boundary (tools/delegate_tool.py), not by the parent's
+        teardown — the parent must not finalize it.
+        """
         from unittest.mock import MagicMock, patch
 
         with patch("run_agent.AIAgent.__init__", return_value=None):
@@ -196,9 +201,30 @@ class TestAgentCloseMethod:
 
             agent.close()
 
-            child_1.close.assert_called_once()
-            child_2.close.assert_called_once()
+            child_1.close.assert_called_once_with(end_session=False)
+            child_2.close.assert_called_once_with(end_session=False)
             assert agent._active_children == []
+
+    def test_release_clients_fallback_close_preserves_child_relay_session(self):
+        """release_clients()'s fall-back-to-close() on a child must not
+        finalize the child's Relay session either — same ownership rule as
+        close()'s own child-teardown step."""
+        from unittest.mock import MagicMock, patch
+
+        with patch("run_agent.AIAgent.__init__", return_value=None):
+            from run_agent import AIAgent
+            agent = AIAgent.__new__(AIAgent)
+            agent.session_id = "test-release-clients-children"
+            agent._active_children_lock = threading.Lock()
+            agent.client = None
+
+            child = MagicMock()
+            child.release_clients.side_effect = RuntimeError("no soft release")
+            agent._active_children = [child]
+
+            agent.release_clients()
+
+            child.close.assert_called_once_with(end_session=False)
 
     def test_close_ends_owned_session_row(self):
         """close() finalizes the agent's owned SQLite session row."""
@@ -404,7 +430,9 @@ class TestDelegationCleanup:
         finally:
             reset_hermes_home_override(token)
 
-        child.close.assert_called_once()
+        # end_session=False: the Relay session is finalized below via
+        # unregister_subagent (gated on has_active_turn), not by close().
+        child.close.assert_called_once_with(end_session=False)
         assert observed["hermes_home"] == profile_home
         relay_host.unregister_subagent.assert_called_once_with(
             {"child_session_id": "child-session"}
@@ -519,6 +547,10 @@ class TestDelegationCleanup:
                 session_id=child.session_id,
             )
             relay_host.unregister_subagent.assert_not_called()
+            # close()'s own Relay-finalize step must not race the guard
+            # above: the delegate machinery, not close(), owns ending a
+            # child's Relay session.
+            child.close.assert_called_once_with(end_session=False)
 
             release_child.set()
             assert child_finished.wait(timeout=5)

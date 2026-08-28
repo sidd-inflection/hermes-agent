@@ -1573,8 +1573,11 @@ def _run_review_in_thread(
                 review_agent.shutdown_memory_provider()
             except Exception:
                 pass
+            # end_session=False: this fork shares the parent's live
+            # session_id (pinned above) — finalizing it here would end the
+            # PARENT's still-active Relay session, not just this fork's.
             try:
-                review_agent.close()
+                review_agent.close(end_session=False)
             except Exception:
                 pass
             review_agent = None
@@ -1649,8 +1652,10 @@ def _run_review_in_thread(
                         review_agent.shutdown_memory_provider()
                     except Exception:
                         pass
+                    # end_session=False: same shared-session_id reasoning as
+                    # the normal-completion path above.
                     try:
-                        review_agent.close()
+                        review_agent.close(end_session=False)
                     except Exception:
                         pass
             except Exception:

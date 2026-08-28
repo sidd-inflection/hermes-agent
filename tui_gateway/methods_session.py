@@ -949,9 +949,13 @@ def _(rid, params: dict) -> dict:
         with _session_resume_lock:
             live = _find_live_session_by_key(target)
             if live is not None:
+                # end_session=False: our just-built agent lost the race but
+                # shares the same session_id as the winner (`live`), which
+                # owns the live Relay session — finalizing here would end
+                # the session the winner is actively using.
                 try:
                     if hasattr(agent, "close"):
-                        agent.close()
+                        agent.close(end_session=False)
                 except Exception:
                     pass
                 if lease is not None:

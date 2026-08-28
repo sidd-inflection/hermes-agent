@@ -4574,8 +4574,11 @@ class AIAgent:
                     child.release_clients()
                 except Exception:
                     # Fall back to full close on children; they're per-turn.
+                    # end_session=False: a child's Relay session is owned by
+                    # the delegate turn boundary (tools/delegate_tool.py),
+                    # not by this soft-eviction fallback.
                     try:
-                        child.close()
+                        child.close(end_session=False)
                     except Exception:
                         pass
         except Exception:
@@ -4674,14 +4677,18 @@ class AIAgent:
         except Exception:
             pass
 
-        # 5. Close active child agents
+        # 5. Close active child agents. end_session=False: a child's Relay
+        # session is owned by the delegate turn boundary
+        # (tools/delegate_tool.py's has_active_turn-gated unregister), not
+        # by the parent's teardown — finalizing it here could end a session
+        # a still-unwinding child turn needs.
         try:
             with self._active_children_lock:
                 children = list(self._active_children)
                 self._active_children.clear()
             for child in children:
                 try:
-                    child.close()
+                    child.close(end_session=False)
                 except Exception:
                     pass
         except Exception:

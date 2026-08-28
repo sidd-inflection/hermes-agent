@@ -58,7 +58,7 @@ class FakeReviewAgent:
     def shutdown_memory_provider(self):
         pass
 
-    def close(self):
+    def close(self, end_session=True):
         pass
 
 
@@ -199,7 +199,7 @@ def test_background_review_shuts_down_memory_provider_before_close(monkeypatch):
         def shutdown_memory_provider(self):
             events.append(("shutdown_memory_provider", None))
 
-        def close(self):
+        def close(self, end_session=True):
             events.append(("close", None))
 
     monkeypatch.setattr(run_agent_module, "AIAgent", FakeReviewAgent)
@@ -247,7 +247,7 @@ def test_background_review_fork_opts_out_of_session_finalization(monkeypatch):
         def shutdown_memory_provider(self):
             pass
 
-        def close(self):
+        def close(self, end_session=True):
             pass
 
     monkeypatch.setattr(run_agent_module, "AIAgent", FakeReviewAgent)
@@ -286,7 +286,7 @@ def test_background_review_skipped_in_delegation_subagent(monkeypatch):
         def shutdown_memory_provider(self):
             pass
 
-        def close(self):
+        def close(self, end_session=True):
             pass
 
     monkeypatch.setattr(run_agent_module, "AIAgent", FakeReviewAgent)
@@ -320,7 +320,7 @@ def test_background_review_runs_at_top_level(monkeypatch):
         def shutdown_memory_provider(self):
             pass
 
-        def close(self):
+        def close(self, end_session=True):
             pass
 
     monkeypatch.setattr(run_agent_module, "AIAgent", FakeReviewAgent)
@@ -355,7 +355,7 @@ def test_background_review_disabled_skips_automatic_spawn(monkeypatch):
         def shutdown_memory_provider(self):
             pass
 
-        def close(self):
+        def close(self, end_session=True):
             pass
 
     monkeypatch.setattr(run_agent_module, "AIAgent", FakeReviewAgent)
@@ -398,7 +398,7 @@ def test_background_review_explicit_focus_runs_even_in_subagent(monkeypatch):
         def shutdown_memory_provider(self):
             pass
 
-        def close(self):
+        def close(self, end_session=True):
             pass
 
     monkeypatch.setattr(run_agent_module, "AIAgent", FakeReviewAgent)

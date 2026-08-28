@@ -3366,10 +3366,13 @@ def _run_single_child(
 
         # Close tool resources (terminal sandboxes, browser daemons,
         # background processes, httpx clients) so subagent subprocesses
-        # don't outlive the delegation.
+        # don't outlive the delegation. end_session=False: the child's Relay
+        # session is finalized below, gated on has_active_turn — a timed-out
+        # child worker may still be unwinding, and finalizing its session
+        # here (before that check) would pop it out from under itself.
         try:
             if hasattr(child, "close"):
-                child.close()
+                child.close(end_session=False)
         except Exception:
             logger.debug("Failed to close child agent after delegation")
 
