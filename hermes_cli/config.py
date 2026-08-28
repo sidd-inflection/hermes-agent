@@ -6129,7 +6129,10 @@ def _inject_profile_env_vars() -> None:
 
 
 # Eagerly inject so that OPTIONAL_ENV_VARS is fully populated at import time.
-_inject_profile_env_vars()
+# Skipped under HERMES_EMBEDDED: an embedding host owns its env and must not
+# get HERMES_HOME populated as an import side effect.
+if os.environ.get("HERMES_EMBEDDED", "").strip().lower() not in {"1", "true", "yes"}:
+    _inject_profile_env_vars()
 
 
 # ── Platform-plugin env var injection ────────────────────────────────────────

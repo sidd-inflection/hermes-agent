@@ -243,11 +243,22 @@ discover_builtin_tools()
 #   - acp_adapter/server.py     -> asyncio.to_thread on session init
 
 # Plugin tool discovery (user/project/pip plugins)
-try:
-    from hermes_cli.plugins import discover_plugins
-    discover_plugins()
-except Exception as e:
-    logger.debug("Plugin discovery failed: %s", e)
+# Skipped under HERMES_EMBEDDED: this eager call is a filesystem side effect
+# (some plugins, e.g. dashboard_auth/self_hosted, call load_config() from
+# their register() hook, which creates HERMES_HOME on disk). An embedding
+# host (Grid) imports this module inside a running server and must not have
+# HERMES_HOME populated as an import side effect. Discovery is not lost:
+# agent/agent_init.py already calls discover_plugins() again (idempotent,
+# per AGENTS.md) during AIAgent construction, which is where Grid picks it
+# up. Do not delete this guard to "restore" discovery — it still happens,
+# just later. Any embedded code path that reads plugin state without
+# constructing an AIAgent must call discover_plugins() itself.
+if os.environ.get("HERMES_EMBEDDED", "").strip().lower() not in {"1", "true", "yes"}:
+    try:
+        from hermes_cli.plugins import discover_plugins
+        discover_plugins()
+    except Exception as e:
+        logger.debug("Plugin discovery failed: %s", e)
 
 
 # =============================================================================

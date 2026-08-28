@@ -124,14 +124,20 @@ from hermes_cli.timeouts import (
     get_provider_stale_timeout,
 )
 
-_hermes_home = get_hermes_home()
-_project_env = Path(__file__).parent / '.env'
-_loaded_env_paths = load_hermes_dotenv(hermes_home=_hermes_home, project_env=_project_env)
-if _loaded_env_paths:
-    for _env_path in _loaded_env_paths:
-        logger.info("Loaded environment variables from %s", _env_path)
+def _is_embedded() -> bool:
+    return os.environ.get("HERMES_EMBEDDED", "").strip().lower() in {"1", "true", "yes"}
+
+if not _is_embedded():
+    _hermes_home = get_hermes_home()
+    _project_env = Path(__file__).parent / '.env'
+    _loaded_env_paths = load_hermes_dotenv(hermes_home=_hermes_home, project_env=_project_env)
+    if _loaded_env_paths:
+        for _env_path in _loaded_env_paths:
+            logger.info("Loaded environment variables from %s", _env_path)
+    else:
+        logger.info("No .env file found. Using system environment variables.")
 else:
-    logger.info("No .env file found. Using system environment variables.")
+    logger.info("HERMES_EMBEDDED=1 — skipping .env autoload; host process owns the environment.")
 
 
 # Import our tool system
