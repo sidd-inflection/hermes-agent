@@ -11465,10 +11465,16 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             pass
         # Close tool resources (terminal sandboxes, browser daemons,
         # background processes, httpx clients) to prevent zombie
-        # process accumulation.
+        # process accumulation. end_session=False: this cleanup also runs on
+        # in-turn cache-hygiene re-eviction of a live conversation (see
+        # _CLEANUP_TIMEOUT_S comment above), not just true session end — the
+        # gateway's own Relay finalize for real session end already runs
+        # separately via _finalize_session_off_loop / hermes_cli.lifecycle
+        # .finalize_session. Finalizing here too would end the Relay session
+        # a later turn for the same session_id still needs to resume.
         try:
             if hasattr(agent, "close"):
-                agent.close()
+                agent.close(end_session=False)
         except Exception:
             pass
         # Auxiliary async clients (session_search/web/vision/etc.) live in a

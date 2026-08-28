@@ -69,7 +69,7 @@ async def test_cleanup_off_loop_does_not_block_event_loop():
     close_started = threading.Event()
     release = threading.Event()
 
-    def slow_close():
+    def slow_close(end_session=True):
         close_started.set()
         release.wait(timeout=5)  # block the WORKER thread, not the loop
 

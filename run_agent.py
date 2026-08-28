@@ -4606,7 +4606,7 @@ class AIAgent:
         except Exception:
             pass
 
-    def close(self) -> None:
+    def close(self, end_session: bool = True) -> None:
         """Release all resources held by this agent instance.
 
         Cleans up subprocess resources that would otherwise become orphans:
@@ -4615,7 +4615,17 @@ class AIAgent:
         - Browser daemon sessions
         - Computer-use backend sessions and target/ref state
         - Active child agents (subagent delegation)
+        - The Relay session (finalized, unless end_session=False)
         - OpenAI/httpx client connections
+
+        ``end_session`` finalizes the Relay session by default: a host that
+        constructs one AIAgent per request (Grid) must finalize on close or
+        one Relay session leaks per request. run_conversation() only ever
+        *releases* the caller's lease (relay_runtime.release_conversation)
+        to keep a conversation resumable across turns, so callers that reuse
+        this agent's session_id afterwards — the CLI's resumable session,
+        the gateway's cached-agent re-eviction — must pass
+        ``end_session=False`` to preserve that behavior exactly.
 
         Safe to call multiple times (idempotent).  Each cleanup step is
         independently guarded so a failure in one does not prevent the rest.
@@ -4676,6 +4686,23 @@ class AIAgent:
                     pass
         except Exception:
             pass
+
+        # 5b. End the Relay session. run_conversation() only releases the
+        # caller lease (relay_runtime.release_conversation) to keep the
+        # conversation resumable; an embedding host that constructs one
+        # agent per request must finalize or one session leaks per request.
+        # Runs before the httpx-client close below so a finalize error can't
+        # leak the connection pool.
+        if end_session:
+            try:
+                from agent import relay_runtime
+
+                relay_runtime.SESSION_COORDINATOR.finalize_conversation(
+                    profile_key=relay_runtime.current_profile_key(),
+                    session_id=getattr(self, "session_id", "") or "",
+                )
+            except Exception:
+                pass
 
         # 6. Close the OpenAI/httpx client
         try:

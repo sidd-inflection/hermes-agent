@@ -451,7 +451,7 @@ async def test_compress_command_cleanup_does_not_block_event_loop():
     close_started = threading.Event()
     release_close = threading.Event()
 
-    def slow_close():
+    def slow_close(end_session=True):
         close_started.set()
         release_close.wait(timeout=5)
 
