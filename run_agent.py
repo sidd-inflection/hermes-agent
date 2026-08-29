@@ -115,6 +115,7 @@ from agent.process_bootstrap import (
     _get_proxy_for_base_url,
 )
 from agent.iteration_budget import IterationBudget
+from agent.memory_provider import MemoryProvider
 from agent.interrupt_compat import request_hard_interrupt
 
 
@@ -529,6 +530,7 @@ class AIAgent:
         checkpoint_max_file_size_mb: int = 10,
         pass_session_id: bool = False,
         requested_provider: str = None,
+        memory_provider: Optional[MemoryProvider] = None,
     ):
         """Forwarder — see ``agent.agent_init.init_agent``."""
         if tool_delay is not None:
@@ -620,6 +622,7 @@ class AIAgent:
             checkpoint_max_total_size_mb=checkpoint_max_total_size_mb,
             checkpoint_max_file_size_mb=checkpoint_max_file_size_mb,
             pass_session_id=pass_session_id,
+            memory_provider=memory_provider,
         )
 
     def _get_session_db_for_recall(self):

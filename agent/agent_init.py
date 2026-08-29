@@ -33,6 +33,7 @@ from urllib.parse import parse_qs, urlparse, urlunparse
 from agent.context_compressor import ContextCompressor
 from agent.iteration_budget import IterationBudget
 from agent.memory_manager import StreamingContextScrubber
+from agent.memory_provider import MemoryProvider
 from agent.session_activity import ActivityProvenance
 from agent.model_metadata import (
     MINIMUM_CONTEXT_LENGTH,
@@ -614,6 +615,7 @@ def init_agent(
     checkpoint_max_file_size_mb: int = 10,
     pass_session_id: bool = False,
     requested_provider: str = None,
+    memory_provider: Optional[MemoryProvider] = None,
 ):
     """
     Initialize the AI Agent.
@@ -1899,9 +1901,29 @@ def init_agent(
 
 
     # Memory provider plugin (external — one at a time, alongside built-in)
-    # Reads memory.provider from config to select which plugin to activate.
+    # Reads memory.provider from config to select which plugin to activate,
+    # unless the caller passed a live instance directly (memory_provider=),
+    # which takes priority and needs no config.yaml entry at all. This is
+    # how an embedder (Grid) wires its own memory system in-process.
+    # skip_memory=True still disables the built-in file store above, but
+    # must not block an explicitly-passed instance — the caller asked for
+    # exactly this provider.
     agent._memory_manager = None
-    if not skip_memory:
+    if memory_provider is not None:
+        try:
+            from agent.memory_manager import MemoryManager as _MemoryManager
+            agent._memory_manager = _MemoryManager()
+            agent._memory_manager.add_provider(memory_provider)
+            agent._memory_manager.initialize_all(
+                session_id=agent.session_id,
+                platform=agent.platform or "embedded",
+                hermes_home="",
+                agent_context="primary",
+            )
+        except Exception as _mpe:
+            _ra().logger.warning("Instance memory provider init failed: %s", _mpe)
+            agent._memory_manager = None
+    elif not skip_memory:
         try:
             _mem_provider_name = mem_config.get("provider", "") if mem_config else ""
 

@@ -119,6 +119,14 @@ def memory_provider_tools_exposed(agent: Any) -> bool:
     model together — otherwise the system prompt would advertise tools
     that don't exist in the tool surface (#81014).
     """
+    manager = getattr(agent, "_memory_manager", None)
+    if manager is not None and not manager.get_all_tool_schemas():
+        # Context-only provider: it has no tool schemas to advertise, so the
+        # #81014 rationale ("don't advertise tools not in the surface") is
+        # vacuous here — there's nothing to advertise, only a system-prompt
+        # block. Let it through regardless of the toolset gate.
+        return True
+
     tools = getattr(agent, "tools", None)
     if isinstance(tools, (list, tuple)):
         memory_tool_present = any(
