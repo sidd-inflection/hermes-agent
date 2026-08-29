@@ -603,16 +603,17 @@ def _raise_if_max_tokens_config_error(
     """Raise a config-error ValueError for a 400 that is really about
     max_tokens, not context overflow.
 
-    A 400 phrased as "requested N output tokens" means max_tokens itself was
-    too large for this call — the input fits. Before this check, that error
-    fell through to the output-cap ephemeral-retry-and-compress path below,
-    which also compresses conversation history "to help" — but compression
-    cannot fix an oversized max_tokens, so the retry re-sends the identical
-    (still oversized) cap and 400s again identically, having silently
-    discarded history for nothing (a spike against a fork of this agent hit
-    exactly this: max_tokens=None derived to the model's full context length
-    — see resolve_max_tokens() in chat_completion_helpers.py — producing a
-    "Context too large — compressing" turn on an otherwise ordinary prompt).
+    A 400 phrased as "requested N output tokens" means an explicit, wildly
+    oversized max_tokens is a configuration error the caller should be shown
+    — not something to silently paper over by discarding conversation
+    history. Before this check, that error fell through to the output-cap
+    ephemeral-retry-and-compress path below, which compresses conversation
+    history "to help" on every output-cap error, including this one where
+    the real fix is telling the operator max_tokens is misconfigured (a
+    spike against a fork of this agent hit exactly this: max_tokens=None
+    derived to the model's full context length — see resolve_max_tokens()
+    in chat_completion_helpers.py — producing a "Context too large —
+    compressing" turn on an otherwise ordinary prompt).
 
     Only raises when the resolved max_tokens is clearly over the model's
     real output budget (an explicit max_output_tokens, else half the context
@@ -630,17 +631,23 @@ def _raise_if_max_tokens_config_error(
     # what gets pulled in during that window and breaks the scoped mock.
     from agent.chat_completion_helpers import resolve_max_tokens
 
+    # _ANTHROPIC_OUTPUT_LIMITS is a table of Anthropic *protocol* ceilings
+    # substring-matched against the model name (its "qwen3" entry is
+    # DashScope's Anthropic-compatible-endpoint limit, 65536) — it is not a
+    # given model's real output budget, and matching it here for a
+    # non-Anthropic session is wrong for the same reason it was wrong to
+    # feed it into resolve_max_tokens() as metadata in chat_completion_
+    # helpers.py's legacy path (e.g. it collides with any model name
+    # containing "qwen3", including Grid's actual model id). Only trust it
+    # when the session is genuinely talking the Anthropic Messages API.
     out_cap = None
-    try:
-        from agent.anthropic_adapter import (
-            _get_anthropic_max_output,
-            _ANTHROPIC_OUTPUT_LIMITS,
-        )
-        model_norm = (getattr(agent, "model", "") or "").lower().replace(".", "-")
-        if any(key in model_norm for key in _ANTHROPIC_OUTPUT_LIMITS):
+    if getattr(agent, "api_mode", None) == "anthropic_messages":
+        try:
+            from agent.anthropic_adapter import _get_anthropic_max_output
+
             out_cap = _get_anthropic_max_output(agent.model)
-    except Exception:
-        pass
+        except Exception:
+            pass
     resolved = resolve_max_tokens(
         getattr(agent, "max_tokens", None),
         SimpleNamespace(context_length=context_length, max_output_tokens=out_cap),

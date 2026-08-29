@@ -466,6 +466,30 @@ class TestBuildApiKwargsMaxTokensUnregisteredProvider:
         kwargs = agent._build_api_kwargs([{"role": "user", "content": "hi"}])
         assert kwargs["max_tokens"] < context_length
 
+    def test_qwen3_substring_model_name_does_not_collide_with_anthropic_protocol_limit(
+        self, monkeypatch,
+    ):
+        """Regression: agent.anthropic_adapter._ANTHROPIC_OUTPUT_LIMITS has a
+        "qwen3" entry (DashScope's Anthropic-compatible-endpoint protocol
+        ceiling, 65536) matched by bare substring against the model name.
+        Grid's real model id (qwen3_235b_fp8_..._dory1105_64k_noweb) contains
+        that substring but is not talking to an Anthropic-compatible
+        endpoint at all — it's a plain chat_completions custom gateway whose
+        real usable context is far smaller than 65536 tokens of output. The
+        resolved max_tokens must come from the context-derived budget, not
+        the unrelated Anthropic protocol number.
+        """
+        monkeypatch.setenv("HERMES_EMBEDDED", "1")
+        agent = _make_agent(
+            monkeypatch, "grid-unregistered",
+            base_url="http://localhost:9999/v1",
+            model="qwen3_235b_fp8_system_prompt_dory1105_64k_noweb",
+        )
+        context_length = agent.context_compressor.context_length
+        kwargs = agent._build_api_kwargs([{"role": "user", "content": "hi"}])
+        assert kwargs["max_tokens"] != 65536
+        assert kwargs["max_tokens"] < context_length
+
 
 class TestBuildApiKwargsCodex:
     def test_uses_responses_api_format(self, monkeypatch):

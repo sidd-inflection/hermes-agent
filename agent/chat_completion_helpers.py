@@ -2093,6 +2093,17 @@ def build_api_kwargs(agent, api_messages: list, tools_for_api: list | None = Non
         # HERMES_EMBEDDED, agent.max_tokens (including None) passes through
         # unchanged, so a caller relying on the server's own default keeps
         # getting it.
+        #
+        # max_output_tokens deliberately NOT set from _ant_max here: _ant_max
+        # is an Anthropic *protocol* ceiling (_ANTHROPIC_OUTPUT_LIMITS),
+        # substring-matched against the model name for a different purpose
+        # (the third-party-proxy max_tokens fallback below) — it is not this
+        # model's real safe output budget. Its "qwen3" entry (DashScope's
+        # protocol max, 65536) collides with any model name containing that
+        # substring, e.g. Grid's qwen3_235b_fp8_..._dory1105_64k_noweb, whose
+        # actual usable context is far smaller than 65536 tokens of output.
+        # Leaving this None lets resolution fall through to the
+        # context-derived budget, which is the value that's actually safe.
         _legacy_max_tokens = resolve_max_tokens(
             agent.max_tokens,
             SimpleNamespace(
@@ -2101,7 +2112,7 @@ def build_api_kwargs(agent, api_messages: list, tools_for_api: list | None = Non
                     if getattr(agent, "context_compressor", None)
                     else None
                 ),
-                max_output_tokens=_ant_max,
+                max_output_tokens=None,
             ),
         )
 

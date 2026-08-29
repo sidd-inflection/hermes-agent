@@ -93,3 +93,28 @@ class TestMaxTokensConfigErrorClassifier:
             "500000 characters."
         )
         _raise_if_max_tokens_config_error(msg, agent, context_length=200000)
+
+    def test_qwen3_substring_model_name_does_not_suppress_the_raise(self):
+        """Regression: agent.anthropic_adapter._ANTHROPIC_OUTPUT_LIMITS has a
+        "qwen3" entry (DashScope's Anthropic-compatible-endpoint protocol
+        ceiling, 65536) matched by bare substring against the model name.
+        Grid's real model id contains that substring but is a plain
+        chat_completions session (api_mode != "anthropic_messages"), not an
+        Anthropic-compatible endpoint. An explicit max_tokens=65536 (a
+        realistic misconfiguration — someone read the same protocol number)
+        against a 65536-token context must still raise: half that context
+        (32768) is the correct threshold, not the unrelated 65536 protocol
+        ceiling coincidentally equal to what was requested.
+        """
+        agent = SimpleNamespace(
+            model="qwen3_235b_fp8_system_prompt_dory1105_64k_noweb",
+            max_tokens=65536,
+            api_mode="chat_completions",
+        )
+        msg = (
+            "This model's maximum context length is 65536 tokens. However, "
+            "you requested 65536 output tokens and your prompt contains "
+            "1200 characters."
+        )
+        with pytest.raises(ValueError, match="requested 65536 output tokens"):
+            _raise_if_max_tokens_config_error(msg, agent, context_length=65536)
