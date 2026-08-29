@@ -850,14 +850,20 @@ def test_review_fork_uses_runtime_model_and_output_cap(curator_env, monkeypatch)
 def test_review_fork_restricts_toolsets_to_skills_and_terminal(curator_env, monkeypatch):
     """The curator LLM fork must advertise only the skills + terminal toolsets.
 
-    Without ``enabled_toolsets=["skills", "terminal"]`` on the AIAgent(...) call
-    in ``_run_llm_review``, ``enabled_toolsets`` defaults to None and init_agent
-    grants the fork the full default catalog (~30 tools) plus the context_engine
-    (lcm_*) tools, billing ~7K wasted schema tokens on every one of the fork's
-    50-100 API calls per consolidation pass. The prompt (curator.py:509-523)
-    confines the model to four tools in natural language, but only this kwarg
-    filters the advertised request schema. Capturing the constructor kwarg is
-    the sole assertion that distinguishes fixed from unfixed code.
+    Without ``enabled_toolsets=["skills_full", "terminal"]`` on the AIAgent(...)
+    call in ``_run_llm_review``, ``enabled_toolsets`` defaults to None and
+    init_agent grants the fork the full default catalog (~30 tools) plus the
+    context_engine (lcm_*) tools, billing ~7K wasted schema tokens on every one
+    of the fork's 50-100 API calls per consolidation pass. The prompt
+    (curator.py:509-523) confines the model to four tools in natural language,
+    but only this kwarg filters the advertised request schema. Capturing the
+    constructor kwarg is the sole assertion that distinguishes fixed from
+    unfixed code.
+
+    ``skills_full``, not ``skills``: the curator's job is to call skill_manage
+    (create/patch/delete/write_file), and the skills/skills_write split made
+    the bare ``skills`` toolset read-only. ``skills_full`` is the alias that
+    restores the pre-split skills+skill_manage bundle.
     """
     curator = curator_env["curator"]
 
@@ -888,8 +894,8 @@ def test_review_fork_restricts_toolsets_to_skills_and_terminal(curator_env, monk
 
     # error is None proves the fork was actually constructed (capture ran).
     assert meta.get("error") is None, meta.get("error")
-    assert captured.get("enabled_toolsets") == ["skills", "terminal"], (
-        "curator review fork did not pass enabled_toolsets=['skills', "
+    assert captured.get("enabled_toolsets") == ["skills_full", "terminal"], (
+        "curator review fork did not pass enabled_toolsets=['skills_full', "
         "'terminal'] to AIAgent; the full default tool catalog (plus lcm_* "
         "context_engine tools) would be advertised; got "
         f"{captured.get('enabled_toolsets')!r}"
@@ -905,10 +911,14 @@ def test_review_fork_toolset_surface_is_skills_plus_terminal():
     default and lcm_* schema absent) but does not itself guard the call-site
     kwarg. No exact-set pin: intentional additions to either toolset must not
     fail this test.
+
+    ``skills_full`` (not bare ``skills``): the skills/skills_write split made
+    the bare toolset read-only, and the fork's call site uses skills_full to
+    keep skill_manage.
     """
     from toolsets import resolve_toolset
 
-    surface = set(resolve_toolset("skills", include_registry=False)) | set(
+    surface = set(resolve_toolset("skills_full", include_registry=False)) | set(
         resolve_toolset("terminal", include_registry=False)
     )
 

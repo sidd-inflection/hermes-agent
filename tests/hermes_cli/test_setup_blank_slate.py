@@ -115,7 +115,12 @@ class TestBlankSlateFork:
         s._run_blank_slate_setup(cfg, tmp_path, is_existing=False)
 
         # Minimal baseline was applied, walkthrough was NOT run.
-        assert cfg["platform_toolsets"]["cli"] == ["file", "skills", "terminal", "vision"]
+        # skills_write alongside skills preserves pre-split behavior: the old
+        # bundled "skills" toolset carried skill_manage too (skills/skills_write
+        # split — see _blank_slate_minimal_toolsets).
+        assert cfg["platform_toolsets"]["cli"] == [
+            "file", "skills", "skills_write", "terminal", "vision",
+        ]
         assert walked["called"] is False
         # Finish-now path records the skill opt-out (no bundled skills).
         assert opted_out["value"] is True

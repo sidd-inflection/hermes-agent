@@ -829,7 +829,7 @@ def tool_category(kwargs: dict[str, Any]) -> str:
         return "memory"
     if toolset == "cronjob":
         return "scheduler"
-    if toolset == "skills":
+    if toolset in ("skills", "skills_write"):
         return "skill"
     if toolset == "x_search":
         return "web"

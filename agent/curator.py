@@ -1945,7 +1945,11 @@ def _run_llm_review(prompt: str) -> Dict[str, Any]:
             credential_pool=_credential_pool,
             request_overrides=_request_overrides,
             **_agent_kwargs,
-            enabled_toolsets=["skills", "terminal"],
+            # skills_full, not skills: the curator's whole job is calling
+            # skill_manage (create/patch/delete/write_file) to maintain the
+            # skill library, so it needs the write side too, not just the
+            # now-read-only "skills" toolset (skills/skills_write split).
+            enabled_toolsets=["skills_full", "terminal"],
             # Umbrella-building over a large skill collection is worth a
             # high iteration ceiling — the pass typically takes 50-100
             # API calls against hundreds of candidate skills. The

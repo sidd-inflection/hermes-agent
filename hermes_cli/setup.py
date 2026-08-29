@@ -3461,17 +3461,21 @@ def _print_macos_fda_tip() -> None:
 def _blank_slate_minimal_toolsets(config: dict):
     """Write the minimal toolset state for a Blank Slate install.
 
-    Only ``file``, ``terminal``, ``vision``, and ``skills`` are enabled.
-    Vision is part of
+    Only ``file``, ``terminal``, ``vision``, ``skills``, and ``skills_write``
+    are enabled. Vision is part of
     the core surface: ``read_file`` cannot read images and its own description
     points at ``vision_analyze``, so an agent without it can't see screenshots
     or image files at all. Skills stay on because the essential
     ``hermes-agent`` skill (the agent's operating manual for driving,
     configuring, and troubleshooting Hermes) is always seeded — without
-    ``skill_view`` it would be unloadable. Two layers enforce the selection:
+    ``skill_view`` it would be unloadable. ``skills_write`` (skill_manage) is
+    kept alongside it purely to preserve pre-split behavior: before the
+    skills/skills_write split, the single ``skills`` toolset carried
+    skill_manage too, so a Blank Slate install already granted it. Two
+    layers enforce the selection:
 
-    1. ``platform_toolsets["cli"] = ["file", "skills", "terminal", "vision"]``
-       — an explicit list of
+    1. ``platform_toolsets["cli"] = ["file", "skills", "skills_write",
+       "terminal", "vision"]`` — an explicit list of
        configurable keys, which the resolver treats as authoritative
        (``has_explicit_config``) so default toolsets aren't re-expanded.
     2. ``agent.disabled_toolsets`` — a global hard-suppression list (applied last
@@ -3482,7 +3486,7 @@ def _blank_slate_minimal_toolsets(config: dict):
        quirks. The user re-enables any of them later via ``hermes tools`` (which
        rewrites ``platform_toolsets``) or by editing ``agent.disabled_toolsets``.
     """
-    keep = {"file", "terminal", "vision", "skills"}
+    keep = {"file", "terminal", "vision", "skills", "skills_write"}
     config.setdefault("platform_toolsets", {})["cli"] = sorted(keep)
 
     try:

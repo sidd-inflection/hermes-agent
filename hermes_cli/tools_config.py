@@ -106,7 +106,8 @@ CONFIGURABLE_TOOLSETS = [
     ("x_search",        "🐦 X (Twitter) Search",        "x_search (requires xAI OAuth or XAI_API_KEY)"),
     ("tts",             "🔊 Text-to-Speech",            "text_to_speech"),
     ("stt",             "🎙️ Speech-to-Text",           "voice transcription (gateway voice messages + voice mode)"),
-    ("skills",          "📚 Skills",                    "list, view, manage"),
+    ("skills",          "📚 Skills",                    "list, view (read-only — see Skill Writing to manage)"),
+    ("skills_write",    "✍️  Skill Writing",            "create, edit, patch, delete skills (skill_manage)"),
     ("todo",            "📋 Task Planning",             "todo"),
     ("memory",          "💾 Memory",                    "persistent memory across sessions"),
     ("context_engine",  "🧩 Context Engine",            "runtime tools from the active context engine"),
@@ -2587,7 +2588,16 @@ def _exempt_explicit_platform_native(
 #: it: an enabled toolset still ships zero schemas when its check fails — the
 #: same split Home Assistant uses. Probing a remote service from this path
 #: would put a network call on every CLI start, gateway session and cron tick.
-_RECENTLY_SHIPPED_TOOLSETS: frozenset = frozenset()
+#:
+#: skills_write shipped this release, carved out of the old bundled
+#: ``skills`` toolset (which included skill_manage) as part of the
+#: skills/skills_write split — a saved explicit list containing "skills"
+#: from before the split predates skills_write's existence entirely, so it
+#: reads as "never offered" here, restoring skill_manage for anyone whose
+#: platform composite already carried it (default hermes-cli/coding/etc.
+#: still ship it directly). MUST be emptied in the next release per the
+#: docstring above.
+_RECENTLY_SHIPPED_TOOLSETS: frozenset = frozenset({"skills_write"})
 
 
 def _enable_recently_shipped_toolsets(

@@ -654,6 +654,7 @@ def test_package_schema_matches_the_skill_contract():
         ("code_execution", "code_execution"),
         ("delegation", "delegation"),
         ("skills", "skill"),
+        ("skills_write", "skill"),
         ("browser-cdp", "browser"),
         ("image_gen", "media"),
         ("homeassistant", "home_automation"),

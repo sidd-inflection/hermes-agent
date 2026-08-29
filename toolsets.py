@@ -173,12 +173,36 @@ TOOLSETS = {
         "includes": []
     },
     
+    # Read-only: list and view skill documents. Split from the old bundled
+    # ``skills`` toolset (which also granted skill_manage) so an operator can
+    # grant an agent the ability to read skills without also granting it the
+    # ability to rewrite them — see ``skills_write`` and the ``skills_full``
+    # alias below, which restores the pre-split bundle byte-for-byte.
     "skills": {
-        "description": "Access, create, edit, and manage skill documents with specialized instructions and knowledge",
-        "tools": ["skills_list", "skill_view", "skill_manage"],
+        "description": "Access and view skill documents with specialized instructions and knowledge (read-only — see skills_write for authoring)",
+        "tools": ["skills_list", "skill_view"],
         "includes": []
     },
-    
+
+    # Write side of skills: create, edit, and delete skill documents.
+    # Deliberately separate from ``skills`` (read-only) above — granting read
+    # access to skills should not implicitly grant the model the ability to
+    # rewrite them.
+    "skills_write": {
+        "description": "Create, edit, and manage skill documents (skill_manage) — pair with skills for the pre-split read+write bundle",
+        "tools": ["skill_manage"],
+        "includes": []
+    },
+
+    # Alias preserving the pre-split behavior of the old bundled ``skills``
+    # toolset (skills_list + skill_view + skill_manage) for callers that want
+    # the old all-in-one grant.
+    "skills_full": {
+        "description": "Full skills access: read (skills_list, skill_view) plus write (skill_manage) — the pre-split skills toolset",
+        "tools": [],
+        "includes": ["skills", "skills_write"]
+    },
+
     "browser": {
         "description": "Browser automation for web interaction (navigate, click, type, scroll, iframes, hold-click) with web search for finding URLs",
         "tools": [

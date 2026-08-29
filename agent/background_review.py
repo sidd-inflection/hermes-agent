@@ -1501,7 +1501,11 @@ def _run_review_in_thread(
             # Hardcoding ["memory", "skills"] granted the review LLM the MEMORY.md
             # read/write tool even when a profile set memory_enabled: false,
             # contaminating a memory-disabled profile (#54937 layer 2).
-            review_toolsets = ["skills"]
+            # skills_full, not skills: the background review fork patches
+            # stale/wrong skills via skill_manage (the self-improvement loop
+            # this whole file drives), so it needs the write side, not just
+            # the now-read-only "skills" toolset (skills/skills_write split).
+            review_toolsets = ["skills_full"]
             if review_agent._memory_enabled or review_agent._user_profile_enabled:
                 review_toolsets.insert(0, "memory")
             review_whitelist = {

@@ -1856,7 +1856,14 @@ from tools.registry import registry, tool_error
 
 registry.register(
     name="skill_manage",
-    toolset="skills",
+    # Registry-side home toolset for skill_manage. Kept in sync with the
+    # skills/skills_write split in toolsets.py: skill_manage is the write
+    # side, so it belongs under skills_write, not the read-only skills
+    # toolset (resolve_toolset("skills", include_registry=True) merges tools
+    # tagged into a toolset here on top of the static TOOLSETS["skills"]
+    # entry — this tag, not just the static table, is what actually keeps
+    # skill_manage out of "skills").
+    toolset="skills_write",
     schema=SKILL_MANAGE_SCHEMA,
     handler=lambda args, **kw: skill_manage(
         action=args.get("action", ""),

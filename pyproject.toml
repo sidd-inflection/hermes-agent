@@ -70,8 +70,11 @@ dependencies = [
   # tools/lazy_deps.py treats every version constraint as satisfied, and
   # hermes_cli/main.py drops to naive requirement parsing. Pure-Python
   # py3-none-any wheel, no compiled extensions — safe to ship everywhere.
-  # Pinned to the version already resolved in uv.lock (no resolution churn).
-  "packaging==26.0",
+  # Was pinned to the version already resolved in uv.lock (no resolution
+  # churn); relaxed to a range so embedders that vendor this fork alongside
+  # their own packaging pin (e.g. Grid) can resolve their own dependency set
+  # without an exact-version conflict here.
+  "packaging>=23.2,<27",
   # Markdown -> HTML conversion for rich message delivery (Matrix
   # `formatted_body`, and the `send_message` tool's HTML path). Now on the
   # DEFAULT delivery path, not matrix-specific: without it both
@@ -136,8 +139,10 @@ dependencies = [
   # bricks the session on Anthropic's non-retryable 400. Pure-wheel, no system
   # libs required for the codecs we use, so it's safe to ship in the base
   # install rather than gating it behind an extra + a mid-session lazy install
-  # (which deadlocked the CLI under prompt_toolkit — see #40490).
-  "Pillow==12.3.0",
+  # (which deadlocked the CLI under prompt_toolkit — see #40490). Relaxed
+  # from an exact pin to a range so embedders vendoring this fork alongside
+  # their own Pillow pin (e.g. Grid) can resolve their own dependency set.
+  "Pillow>=11.3,<13",
   # Windows log rotation. Stdlib ``RotatingFileHandler.doRollover()`` uses
   # ``os.rename()`` which fails with ``PermissionError [WinError 32]`` on
   # Windows whenever any other process holds an append-mode handle on
