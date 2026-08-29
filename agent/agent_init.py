@@ -36,9 +36,9 @@ from agent.memory_manager import StreamingContextScrubber
 from agent.memory_provider import MemoryProvider
 from agent.session_activity import ActivityProvenance
 from agent.model_metadata import (
-    MINIMUM_CONTEXT_LENGTH,
     fetch_model_metadata,
     is_local_endpoint,
+    minimum_context_length,
     query_ollama_num_ctx,
 )
 from agent.process_bootstrap import _install_safe_stdio
@@ -2885,15 +2885,16 @@ def init_agent(
         and not isinstance(agent._config_context_length, bool)
         and agent._config_context_length > 0
     )
-    if _ctx and _ctx < MINIMUM_CONTEXT_LENGTH and not _allow_lmstudio_explicit_below_floor:
+    _min_ctx = minimum_context_length()
+    if _ctx and _ctx < _min_ctx and not _allow_lmstudio_explicit_below_floor:
         raise ValueError(
             f"Model {agent.model} has a context window of {_ctx:,} tokens, "
-            f"which is below the minimum {MINIMUM_CONTEXT_LENGTH:,} required "
+            f"which is below the minimum {_min_ctx:,} required "
             f"by Hermes Agent.  Choose a model with at least "
-            f"{MINIMUM_CONTEXT_LENGTH // 1000}K context.  If your server "
+            f"{_min_ctx // 1000}K context.  If your server "
             f"reports a window smaller than the model's true window, set "
             f"model.context_length in config.yaml to the real value "
-            f"(this must be at least {MINIMUM_CONTEXT_LENGTH // 1000}K)."
+            f"(this must be at least {_min_ctx // 1000}K)."
         )
 
     # Nous Hermes 3/4 are chat models, not tool-call-tuned. The interactive

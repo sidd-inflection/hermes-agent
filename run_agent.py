@@ -459,7 +459,7 @@ class AIAgent:
         command: str = None,
         args: list[str] | None = None,
         model: str = "",
-        max_iterations: int = sys.maxsize,  # Default: unlimited tool-calling iterations (shared with subagents)
+        max_iterations: int = None,  # None -> HERMES_MAX_ITERATIONS_DEFAULT env override, else unlimited (shared with subagents)
         tool_delay: float = None,  # Deprecated: accepted for compatibility, ignored
         enabled_toolsets: List[str] = None,
         disabled_toolsets: List[str] = None,
@@ -540,6 +540,33 @@ class AIAgent:
                 DeprecationWarning,
                 stacklevel=2,
             )
+        if max_iterations is None:
+            # Opt-in, default-off: with HERMES_MAX_ITERATIONS_DEFAULT unset,
+            # this preserves the upstream default of unlimited iterations.
+            # Resolved here (construction time), not at module scope, so the
+            # env var can be set after import (e.g. Grid sets it in its own
+            # startup before constructing any AIAgent).
+            _raw_max_iter = os.environ.get("HERMES_MAX_ITERATIONS_DEFAULT")
+            max_iterations = sys.maxsize
+            if _raw_max_iter is not None:
+                try:
+                    _parsed_max_iter = int(_raw_max_iter)
+                except ValueError:
+                    logger.warning(
+                        "HERMES_MAX_ITERATIONS_DEFAULT=%r is not an integer; "
+                        "using unlimited iterations.", _raw_max_iter,
+                    )
+                else:
+                    if _parsed_max_iter > 0:
+                        max_iterations = _parsed_max_iter
+                    else:
+                        # A zero/negative value would make the agent do
+                        # nothing (or be nonsensical) — an embedder typo
+                        # must not silently produce that.
+                        logger.warning(
+                            "HERMES_MAX_ITERATIONS_DEFAULT=%r must be positive; "
+                            "using unlimited iterations.", _raw_max_iter,
+                        )
         from agent.agent_init import init_agent
         init_agent(
             self,

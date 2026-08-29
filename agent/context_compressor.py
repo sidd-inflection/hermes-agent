@@ -38,10 +38,11 @@ from agent.context_engine import ContextEngine, sanitize_memory_context
 from agent.error_classifier import FailoverReason, classify_api_error
 from agent.message_sanitization import tool_result_id_variants
 from agent.model_metadata import (
-    MINIMUM_CONTEXT_LENGTH,
+    MINIMUM_CONTEXT_LENGTH,  # noqa: F401  (re-exported; some callers/tests import it from here)
     get_model_context_length,
     estimate_messages_tokens_rough,
     estimate_tokens_rough,
+    minimum_context_length,
 )
 from agent.redact import redact_sensitive_text
 from agent.turn_context import drop_stale_api_content
@@ -3177,7 +3178,7 @@ class ContextCompressor(ContextEngine):
         if effective_window <= 0:
             effective_window = context_length
         pct_value = int(effective_window * threshold_percent)
-        floored = max(pct_value, MINIMUM_CONTEXT_LENGTH)
+        floored = max(pct_value, minimum_context_length())
         # If flooring pushed the threshold to/over the effective window it can
         # never be reached. Trigger at 85% of the effective input budget so a
         # minimum-context model rides most of its budget before compacting

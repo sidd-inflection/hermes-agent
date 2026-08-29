@@ -410,7 +410,33 @@ def _warn_context_length_fallback(model: str, base_url: str) -> None:
 # Minimum context length required to run Hermes Agent.  Models with fewer
 # tokens cannot maintain enough working memory for tool-calling workflows.
 # Sessions, model switches, and cron jobs should reject models below this.
+# Kept as a module constant for compatibility (some callers still read it
+# directly); prefer minimum_context_length() below, which honors the
+# HERMES_MINIMUM_CONTEXT_LENGTH override.
 MINIMUM_CONTEXT_LENGTH = 64_000
+
+
+def minimum_context_length() -> int:
+    """The effective minimum context floor, overridable via
+    HERMES_MINIMUM_CONTEXT_LENGTH (opt-in; unset behaves exactly like the
+    MINIMUM_CONTEXT_LENGTH constant).
+
+    Embedders can have a model whose nominal window equals
+    MINIMUM_CONTEXT_LENGTH but whose *usable* context is lower once a
+    server-side chat-template preamble is accounted for — e.g. Grid's model
+    has a 64K window but ~44K usable. A non-numeric or non-positive override
+    (an embedder typo) falls back to the constant rather than disabling the
+    floor or crashing.
+    """
+    raw = os.environ.get("HERMES_MINIMUM_CONTEXT_LENGTH")
+    if raw is None:
+        return MINIMUM_CONTEXT_LENGTH
+    try:
+        value = int(raw)
+    except ValueError:
+        return MINIMUM_CONTEXT_LENGTH
+    return value if value > 0 else MINIMUM_CONTEXT_LENGTH
+
 
 # Short-lived in-process cache for local-server context probes. Bounds the
 # probe rate when the new local-endpoint live-probe paths (reconcile-on-hit +
@@ -878,7 +904,7 @@ def _maybe_cache_local_context_length(
     minimum-context guidance — they must not be normalized into the on-disk cache
     as if they were valid operating limits.
     """
-    if length >= MINIMUM_CONTEXT_LENGTH:
+    if length >= minimum_context_length():
         save_context_length(model, base_url, length)
 
 
@@ -901,11 +927,11 @@ def _reconcile_local_cached_context_length(
     """
     live_ctx = _query_local_context_length(model, base_url, api_key=api_key)
     if live_ctx and live_ctx > 0 and live_ctx != cached:
-        if live_ctx < MINIMUM_CONTEXT_LENGTH:
+        if live_ctx < minimum_context_length():
             logger.info(
                 "Live local probe for %s@%s reports %s (< minimum %s); "
                 "invalidating stale cache — agent init should reject",
-                model, base_url, f"{live_ctx:,}", f"{MINIMUM_CONTEXT_LENGTH:,}",
+                model, base_url, f"{live_ctx:,}", f"{minimum_context_length():,}",
             )
             _invalidate_cached_context_length(model, base_url)
             return live_ctx

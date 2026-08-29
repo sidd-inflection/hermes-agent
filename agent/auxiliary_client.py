@@ -162,8 +162,8 @@ def aux_probe_mode():
 
 from agent.credential_pool import load_pool
 from agent.model_metadata import (
-    MINIMUM_CONTEXT_LENGTH,
     get_model_context_length,
+    minimum_context_length,
     strip_codex_context_variant_suffix as _strip_codex_ctx_variant,
 )
 from hermes_cli.config import get_hermes_home
@@ -5641,7 +5641,7 @@ def _task_minimum_context_length(task: Optional[str]) -> Optional[int]:
     if not task:
         return None
     if task == "compression":
-        return MINIMUM_CONTEXT_LENGTH
+        return minimum_context_length()
     return None
 
 
