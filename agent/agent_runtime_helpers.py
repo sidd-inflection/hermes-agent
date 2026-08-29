@@ -3226,6 +3226,7 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
                 turn_id=getattr(agent, "_current_turn_id", "") or "",
                 api_request_id=getattr(agent, "_current_api_request_id", "") or "",
                 middleware_trace=list(_tool_middleware_trace),
+                client_metadata=dict(getattr(agent, "client_metadata", {}) or {}),
             )
             if modified_args is not None:
                 function_args = modified_args

@@ -616,6 +616,7 @@ def init_agent(
     pass_session_id: bool = False,
     requested_provider: str = None,
     memory_provider: Optional[MemoryProvider] = None,
+    client_metadata: Optional[Dict[str, Any]] = None,
 ):
     """
     Initialize the AI Agent.
@@ -669,6 +670,11 @@ def init_agent(
             and the "Active Hermes profile:" paragraph from the system prompt. For embedders
             (e.g. Grid) that run Hermes as a component inside their own product and don't
             want the underlying host machine's environment surfaced to end users.
+        client_metadata (Dict): Opaque caller-supplied identifiers (e.g. trace_id, user_id,
+            conversation_sid) echoed verbatim into the llm_request middleware context and
+            the pre_api_request/pre_tool_call hook contexts, so an embedder's own
+            observability stack (e.g. Grid's Langfuse + OTel) can join its own trace ids
+            instead of a plugin deriving new ones. Default: {} (no behavior change).
     """
     _install_safe_stdio()
 
@@ -683,6 +689,14 @@ def init_agent(
     agent.tool_progress_mode = tool_progress_mode
     agent.ephemeral_system_prompt = ephemeral_system_prompt
     agent.platform = platform  # "cli", "telegram", "discord", "whatsapp", etc.
+    # Opaque caller-supplied identifiers (trace_id, user_id, conversation_sid,
+    # ...) an embedding host wants echoed into hook/middleware contexts so its
+    # own observability stack can join on ids it already minted, instead of a
+    # plugin (e.g. bundled Langfuse) deriving its own. Default-off: an empty
+    # dict changes nothing for existing callers/plugins. Copied defensively
+    # (like middleware_trace below) so a hook callback that mutates the dict
+    # it receives can't corrupt the host's correlation ids for later calls.
+    agent.client_metadata = dict(client_metadata) if client_metadata else {}
     agent._user_id = user_id  # Platform user identifier (gateway sessions)
     agent._user_id_alt = user_id_alt  # Optional stable alternate platform identifier
     agent._user_name = user_name

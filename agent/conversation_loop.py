@@ -3085,6 +3085,7 @@ def run_conversation(
                         base_url=agent.base_url,
                         api_mode=agent.api_mode,
                         api_call_count=api_call_count,
+                        client_metadata=dict(getattr(agent, "client_metadata", {}) or {}),
                     )
                     api_kwargs = _llm_request_mw.payload
                     _original_api_kwargs = _llm_request_mw.original_payload
@@ -3155,6 +3156,7 @@ def run_conversation(
                             started_at=api_start_time,
                             middleware_trace=list(_llm_middleware_trace),
                             request=_request_payload,
+                            client_metadata=dict(getattr(agent, "client_metadata", {}) or {}),
                         )
                 except Exception:
                     pass

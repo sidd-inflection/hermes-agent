@@ -656,6 +656,7 @@ def _run_agent_tool_execution_middleware(
                         api_request_id=getattr(agent, "_current_api_request_id", "")
                         or "",
                         middleware_trace=list(state["middleware_trace"]),
+                        client_metadata=dict(getattr(agent, "client_metadata", {}) or {}),
                     )
                     if modified_args is not None:
                         final_args = modified_args

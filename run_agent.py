@@ -531,6 +531,7 @@ class AIAgent:
         pass_session_id: bool = False,
         requested_provider: str = None,
         memory_provider: Optional[MemoryProvider] = None,
+        client_metadata: Optional[Dict[str, Any]] = None,
     ):
         """Forwarder — see ``agent.agent_init.init_agent``."""
         if tool_delay is not None:
@@ -650,6 +651,7 @@ class AIAgent:
             checkpoint_max_file_size_mb=checkpoint_max_file_size_mb,
             pass_session_id=pass_session_id,
             memory_provider=memory_provider,
+            client_metadata=client_metadata,
         )
 
     def _get_session_db_for_recall(self):
@@ -7104,6 +7106,10 @@ class AIAgent:
                 **self._stream_hook_base_payload(),
                 delta=text,
                 kind="text",
+                # Captured here (actual emission time), not on the plain
+                # stream_delta_callback(text) path, so a TTFT span can be
+                # closed without wrapping the user callback.
+                emitted_at=time.time(),
             )
         except Exception:
             logger.debug("on_stream_delta plugin hook enqueue failed", exc_info=True)
@@ -7132,6 +7138,7 @@ class AIAgent:
                     **self._stream_hook_base_payload(),
                     delta=text,
                     kind="reasoning",
+                    emitted_at=time.time(),
                 )
         except Exception:
             logger.debug("reasoning on_stream_delta plugin hook enqueue failed", exc_info=True)
