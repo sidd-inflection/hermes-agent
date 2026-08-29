@@ -1913,10 +1913,18 @@ def init_agent(
         try:
             from agent.memory_manager import MemoryManager as _MemoryManager
             agent._memory_manager = _MemoryManager()
+            # Marks the gate in memory_manager.memory_provider_tools_exposed():
+            # only a host-injected instance bypasses the toolset gate at zero
+            # schemas. A config.yaml-selected provider must not.
+            agent._memory_manager.host_injected = True
             agent._memory_manager.add_provider(memory_provider)
             agent._memory_manager.initialize_all(
                 session_id=agent.session_id,
                 platform=agent.platform or "embedded",
+                # Deliberately empty, not get_hermes_home(): a host that wires
+                # a provider in-process may have no HERMES_HOME on disk at
+                # all. Providers needing profile-scoped storage should not
+                # assume this is populated.
                 hermes_home="",
                 agent_context="primary",
             )

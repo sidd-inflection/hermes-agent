@@ -120,11 +120,20 @@ def memory_provider_tools_exposed(agent: Any) -> bool:
     that don't exist in the tool surface (#81014).
     """
     manager = getattr(agent, "_memory_manager", None)
-    if manager is not None and not manager.get_all_tool_schemas():
-        # Context-only provider: it has no tool schemas to advertise, so the
-        # #81014 rationale ("don't advertise tools not in the surface") is
-        # vacuous here — there's nothing to advertise, only a system-prompt
-        # block. Let it through regardless of the toolset gate.
+    if (
+        manager is not None
+        and getattr(manager, "host_injected", False)
+        and not manager.get_all_tool_schemas()
+    ):
+        # An embedding host explicitly injected this provider instance (see
+        # agent_init.py's memory_provider= path) -- the host's own toolset
+        # config is not the authority on a provider it wired in-process
+        # itself, and it has no tool schemas to advertise, so the #81014
+        # rationale ("don't advertise tools not in the surface") is vacuous
+        # here. A provider selected via config.yaml (memory.provider) still
+        # goes through the toolset gate below even at zero schemas -- an
+        # operator's disabled_toolsets=["memory"] must keep suppressing it
+        # (#5544/#81014).
         return True
 
     tools = getattr(agent, "tools", None)
@@ -419,6 +428,11 @@ class MemoryManager:
         self._providers: List[MemoryProvider] = []
         self._tool_to_provider: Dict[str, MemoryProvider] = {}
         self._has_external: bool = False  # True once a non-builtin provider is added
+        # Set True only by agent_init.py's memory_provider= instance path.
+        # Distinguishes "an embedding host wired this provider directly" from
+        # "config.yaml's memory.provider selected this" for the #81014 gate
+        # in memory_provider_tools_exposed() above.
+        self.host_injected: bool = False
         self._external_prefetch_timeout = (
             _EXTERNAL_PREFETCH_TIMEOUT_S
             if external_prefetch_timeout is None
