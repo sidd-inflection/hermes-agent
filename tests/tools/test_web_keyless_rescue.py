@@ -202,6 +202,52 @@ class TestExtractRescue:
         assert results[0]["content"].startswith("x")
         ring.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_auth_failure_message_when_disabled(self, monkeypatch):
+        # Task A9: keyless_rescue: false already blocks the ring for every
+        # failure reason (see TestSearchRescue.test_no_rescue_when_disabled).
+        # This only checks that an auth-shaped failure gets the more
+        # actionable "rejected credentials" message instead of a bare pass-
+        # through of the original error.
+        class _AuthFailProvider(_KeyedBoomProvider):
+            def extract(self, urls, **kwargs):
+                return [
+                    {"url": u, "title": "", "content": "",
+                     "error": "HTTP 401: Unauthorized"}
+                    for u in urls
+                ]
+
+        monkeypatch.setattr(
+            web_tools, "_load_web_config",
+            lambda: {"backend": "tavily", "keyless_rescue": False},
+        )
+        with patch.object(keyless_mcp, "extract_with_failover") as ring:
+            results = await self._dispatch(
+                monkeypatch, _AuthFailProvider(), ["https://a"]
+            )
+        assert "credentials" in results[0]["error"]
+        ring.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_auth_failure_message_when_disabled_raises(self, monkeypatch):
+        # Same as above, but the extract() call raises instead of returning
+        # error dicts — the exception-path gate at tools/web_tools.py's
+        # web_extract_tool had no coverage at all before this test.
+        class _AuthRaisingProvider(_KeyedBoomProvider):
+            def extract(self, urls, **kwargs):
+                raise RuntimeError("HTTP 401: Unauthorized")
+
+        monkeypatch.setattr(
+            web_tools, "_load_web_config",
+            lambda: {"backend": "tavily", "keyless_rescue": False},
+        )
+        with patch.object(keyless_mcp, "extract_with_failover") as ring:
+            results = await self._dispatch(
+                monkeypatch, _AuthRaisingProvider(), ["https://a"]
+            )
+        assert "credentials" in results[0]["error"]
+        ring.assert_not_called()
+
     def test_rescue_extract_annotates_results(self, monkeypatch):
         good = [
             {"url": "https://a", "title": "A", "content": "x",

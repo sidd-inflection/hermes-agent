@@ -448,6 +448,66 @@ def _keyless_rescue_enabled() -> bool:
         return False
 
 
+def _is_auth_failure(err) -> bool:
+    """True when *err* looks like a rejected credential (401/403/
+    'Unauthorized'). Used only to pick a more useful error message when
+    ``web.keyless_rescue`` is already off — it does NOT affect whether a
+    rescue happens. ``web.keyless_rescue: false`` blocks rescue for every
+    failure reason (see ``_rescue_eligible``); that blanket behavior is
+    what gives an operator a real query-egress guarantee.
+    """
+    return bool(re.search(r"401|403|unauthoriz", str(err or ""), re.I))
+
+
+def _auth_gate_blocks(original_error) -> bool:
+    """True when *original_error* is a rejected credential AND the operator
+    opted out of rescuing it via ``web.keyless_rescue: false``. Callers use
+    this to short-circuit to ``_credential_failure``/``_credential_failure_extract``
+    before contacting any keyless provider.
+    """
+    return _is_auth_failure(original_error) and not _keyless_rescue_enabled()
+
+
+def _credential_failure(tool: str, provider_name: str, original_error) -> dict:
+    """The failure returned instead of a keyless-ring rescue when
+    ``web.keyless_rescue`` is off and *original_error* is a rejected
+    credential. No keyless provider is contacted: masking a misconfigured
+    key as a working search — and sending the user's query to a
+    third-party provider the operator never configured — is worse than
+    surfacing the failure.
+    """
+    return {
+        "success": False,
+        "error": (
+            f"{tool} backend '{provider_name}' rejected credentials: "
+            f"{original_error or 'unauthorized'}"
+        ),
+        "provider": provider_name,
+    }
+
+
+def _credential_failure_extract(provider_name: str, urls: list, original_error) -> list:
+    """Per-URL analogue of ``_credential_failure`` for ``web_extract``.
+
+    No ``provider`` field: web_extract_tool's final trim step only keeps
+    url/title/content/error/blocked_by_policy, so an extra key here would
+    just be silently dropped — the backend name is folded into the
+    message text instead.
+    """
+    return [
+        {
+            "url": u,
+            "title": "",
+            "content": "",
+            "error": (
+                f"web_extract backend '{provider_name}' rejected credentials: "
+                f"{original_error or 'unauthorized'}"
+            ),
+        }
+        for u in urls
+    ]
+
+
 def _rescue_eligible(provider) -> bool:
     """True when a failed call on *provider* should get a one-shot rescue.
 
@@ -985,22 +1045,28 @@ def web_search_tool(query: str, limit: int = 5) -> str:
                 try:
                     _resp = provider.search(query, _fetch_limit)
                 except Exception as exc:  # noqa: BLE001 — candidate for rescue
-                    if _rescue_eligible(provider):
+                    _err = str(exc)
+                    if _auth_gate_blocks(_err):
+                        _resp = _credential_failure("web_search", provider.name, _err)
+                    elif _rescue_eligible(provider):
                         _rescued = True
                         _resp = _rescue_search(
-                            provider.name, str(exc), query, _fetch_limit
+                            provider.name, _err, query, _fetch_limit
                         )
                     else:
                         raise
                 else:
-                    if not _resp.get("success") and _rescue_eligible(provider):
+                    _err = str(_resp.get("error", ""))
+                    if not _resp.get("success") and _auth_gate_blocks(_err):
+                        _resp = _credential_failure("web_search", provider.name, _err)
+                    elif not _resp.get("success") and _rescue_eligible(provider):
                         # One-shot keyless rescue: THIS call rides the
                         # free-tier ring; the next call attempts the chosen
                         # backend again.
                         _rescued = True
                         _resp = _rescue_search(
                             provider.name,
-                            str(_resp.get("error", "")),
+                            _err,
                             query,
                             _fetch_limit,
                         )
@@ -1317,10 +1383,13 @@ async def web_extract_tool(
                             provider.extract, fetch_urls, format=format
                         )
                 except Exception as exc:  # noqa: BLE001 — candidate for rescue
-                    if _rescue_eligible(provider):
+                    _err = str(exc)
+                    if _auth_gate_blocks(_err):
+                        results = _credential_failure_extract(provider.name, fetch_urls, _err)
+                    elif _rescue_eligible(provider):
                         _extract_rescued = True
                         failed = [
-                            {"url": u, "title": "", "content": "", "error": str(exc)}
+                            {"url": u, "title": "", "content": "", "error": _err}
                             for u in fetch_urls
                         ]
                         results = await asyncio.to_thread(
@@ -1332,15 +1401,19 @@ async def web_extract_tool(
                     # One-shot keyless rescue when the WHOLE batch failed
                     # (backend-level outage, not per-page problems). Stateless:
                     # the next web_extract call uses the chosen backend again.
-                    if (
-                        results
-                        and all(r.get("error") for r in results)
-                        and _rescue_eligible(provider)
-                    ):
-                        _extract_rescued = True
-                        results = await asyncio.to_thread(
-                            _rescue_extract, provider.name, fetch_urls, results
+                    if results and all(r.get("error") for r in results):
+                        _batch_err = next(
+                            (r.get("error") for r in results if r.get("error")), ""
                         )
+                        if _auth_gate_blocks(_batch_err):
+                            results = _credential_failure_extract(
+                                provider.name, fetch_urls, _batch_err
+                            )
+                        elif _rescue_eligible(provider):
+                            _extract_rescued = True
+                            results = await asyncio.to_thread(
+                                _rescue_extract, provider.name, fetch_urls, results
+                            )
 
                 # Cache each successful fetch's full clean text for TTL reuse
                 # (best-effort; oversized pages are skipped by the cache).
