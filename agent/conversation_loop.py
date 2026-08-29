@@ -24,6 +24,7 @@ import re
 import ssl
 import sys
 import time
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 from agent.codex_responses_adapter import _summarize_user_message_for_log
@@ -588,6 +589,64 @@ def _ollama_context_limit_error(agent: Any, request_tokens: int) -> Optional[str
         "model context). If you manage the model through an Ollama Modelfile, "
         "set `PARAMETER num_ctx 65536` there instead."
     )
+
+
+# "This model's maximum context length is N tokens. However, you requested
+# N output tokens ..." (LM Studio / llama.cpp / vLLM-style servers). This
+# phrasing means the OUTPUT cap is the problem, not the conversation size.
+_REQUESTED_OUTPUT_TOKENS_RE = re.compile(r"requested \d+ output tokens")
+
+
+def _raise_if_max_tokens_config_error(
+    error_msg: str, agent: Any, context_length: int, original_error_msg: str | None = None,
+) -> None:
+    """Raise a config-error ValueError for a 400 that is really about
+    max_tokens, not context overflow.
+
+    A 400 phrased as "requested N output tokens" means max_tokens itself was
+    too large for this call — the input fits. Before this check, that error
+    fell through to the output-cap ephemeral-retry-and-compress path below,
+    which also compresses conversation history "to help" — but compression
+    cannot fix an oversized max_tokens, so the retry re-sends the identical
+    (still oversized) cap and 400s again identically, having silently
+    discarded history for nothing (a spike against a fork of this agent hit
+    exactly this: max_tokens=None derived to the model's full context length
+    — see resolve_max_tokens() in chat_completion_helpers.py — producing a
+    "Context too large — compressing" turn on an otherwise ordinary prompt).
+
+    Only raises when the resolved max_tokens is clearly over the model's
+    real output budget (an explicit max_output_tokens, else half the context
+    window) so a genuinely borderline case — the provider's cap is only
+    slightly tighter than what was requested — keeps today's shrink-and-
+    retry recovery, which does work for that case.
+    """
+    if not _REQUESTED_OUTPUT_TOKENS_RE.search(error_msg):
+        return
+    # Deferred import: agent.chat_completion_helpers must not become a
+    # module-level (import-time) dependency of agent.conversation_loop.
+    # Several tui_gateway tests patch sys.modules["hermes_constants"] only
+    # for the duration of tui_gateway.server's own first import (see
+    # tests/tui_gateway/test_protocol.py); a module-level import here shifts
+    # what gets pulled in during that window and breaks the scoped mock.
+    from agent.chat_completion_helpers import resolve_max_tokens
+
+    out_cap = None
+    try:
+        from agent.anthropic_adapter import (
+            _get_anthropic_max_output,
+            _ANTHROPIC_OUTPUT_LIMITS,
+        )
+        model_norm = (getattr(agent, "model", "") or "").lower().replace(".", "-")
+        if any(key in model_norm for key in _ANTHROPIC_OUTPUT_LIMITS):
+            out_cap = _get_anthropic_max_output(agent.model)
+    except Exception:
+        pass
+    resolved = resolve_max_tokens(
+        getattr(agent, "max_tokens", None),
+        SimpleNamespace(context_length=context_length, max_output_tokens=out_cap),
+    )
+    if resolved > (out_cap or context_length // 2):
+        raise ValueError(original_error_msg or error_msg)
 
 
 def _ra():
@@ -5762,6 +5821,13 @@ def run_conversation(
                 if is_context_length_error:
                     compressor = agent.context_compressor
                     old_ctx = compressor.context_length
+
+                    # max_tokens 400 is a config error, not context overflow
+                    # — must run before the output-cap retry/compress logic
+                    # below (see _raise_if_max_tokens_config_error).
+                    _raise_if_max_tokens_config_error(
+                        error_msg, agent, old_ctx, original_error_msg=str(api_error),
+                    )
 
                     # ── Distinguish two very different errors ───────────
                     # 1. "Prompt too long": the INPUT exceeds the context window.

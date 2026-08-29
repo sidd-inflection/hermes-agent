@@ -436,6 +436,37 @@ class TestBuildApiKwargsCustomEndpoint:
         assert "response_item_id" not in tool_call
 
 
+class TestBuildApiKwargsMaxTokensUnregisteredProvider:
+    """resolve_max_tokens() wiring — an unregistered provider (no providers/
+    profile, e.g. Grid's in-process gateway) is the shape that hit the spike:
+    max_tokens=None left the key out of the request entirely, and the
+    downstream gateway defaulted the omitted value to the model's full
+    context length, then 400'd on any nonempty prompt.
+
+    Gated behind HERMES_EMBEDDED so upstream/CLI callers relying on the
+    server's own default for an omitted max_tokens see no behavior change.
+    """
+
+    def test_unset_max_tokens_omitted_without_hermes_embedded(self, monkeypatch):
+        monkeypatch.delenv("HERMES_EMBEDDED", raising=False)
+        agent = _make_agent(
+            monkeypatch, "grid-unregistered",
+            base_url="http://localhost:9999/v1", model="dory1105-64k",
+        )
+        kwargs = agent._build_api_kwargs([{"role": "user", "content": "hi"}])
+        assert "max_tokens" not in kwargs
+
+    def test_unset_max_tokens_capped_under_hermes_embedded(self, monkeypatch):
+        monkeypatch.setenv("HERMES_EMBEDDED", "1")
+        agent = _make_agent(
+            monkeypatch, "grid-unregistered",
+            base_url="http://localhost:9999/v1", model="dory1105-64k",
+        )
+        context_length = agent.context_compressor.context_length
+        kwargs = agent._build_api_kwargs([{"role": "user", "content": "hi"}])
+        assert kwargs["max_tokens"] < context_length
+
+
 class TestBuildApiKwargsCodex:
     def test_uses_responses_api_format(self, monkeypatch):
         agent = _make_agent(monkeypatch, "openai-codex", api_mode="codex_responses",

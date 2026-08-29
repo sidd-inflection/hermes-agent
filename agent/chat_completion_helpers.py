@@ -1816,6 +1816,31 @@ def interruptible_api_call(agent, api_kwargs: dict):
 
 
 
+# Hard ceiling on the derived max_tokens default (see resolve_max_tokens
+# below) and the divisor used to carve that default out of the context
+# window. Named per the spike that found this bug: an OpenAI-compatible
+# gateway defaults an *omitted* max_tokens to the model's full context
+# length, then 400s on any nonempty prompt.
+DEFAULT_MAX_OUTPUT_TOKENS = 8192
+CONTEXT_LENGTH_OUTPUT_DIVISOR = 4
+
+
+def resolve_max_tokens(requested: int | None, metadata: Any) -> int:
+    """None -> a safe output budget, never the context window.
+
+    The old behavior sent max_tokens=<context_length>; an OpenAI-compatible
+    gateway that enforces input+output <= context then 400s on any nonempty
+    prompt ("maximum input length of 0 tokens").
+    """
+    if requested is not None:
+        return requested
+    out_cap = getattr(metadata, "max_output_tokens", None)
+    if out_cap:
+        return out_cap
+    ctx = getattr(metadata, "context_length", None) or DEFAULT_MAX_OUTPUT_TOKENS
+    return min(ctx // CONTEXT_LENGTH_OUTPUT_DIVISOR, DEFAULT_MAX_OUTPUT_TOKENS)
+
+
 def build_api_kwargs(agent, api_messages: list, tools_for_api: list | None = None) -> dict:
     """Build the keyword arguments dict for the active API mode."""
     if tools_for_api is None:
@@ -2059,13 +2084,34 @@ def build_api_kwargs(agent, api_messages: list, tools_for_api: list | None = Non
     # Strip image parts for non-vision models (no-op when vision-capable).
     _msgs_for_chat = agent._prepare_messages_for_non_vision_model(api_messages)
 
+    _legacy_max_tokens = agent.max_tokens
+    if os.environ.get("HERMES_EMBEDDED", "").strip().lower() in {"1", "true", "yes"}:
+        # HERMES_EMBEDDED: an unregistered/custom provider (no providers/
+        # profile) is exactly the shape of gateway the spike hit — never
+        # depend on its default for an omitted max_tokens (see
+        # resolve_max_tokens above). Upstream/CLI use is unaffected: without
+        # HERMES_EMBEDDED, agent.max_tokens (including None) passes through
+        # unchanged, so a caller relying on the server's own default keeps
+        # getting it.
+        _legacy_max_tokens = resolve_max_tokens(
+            agent.max_tokens,
+            SimpleNamespace(
+                context_length=(
+                    getattr(agent, "context_compressor", None).context_length
+                    if getattr(agent, "context_compressor", None)
+                    else None
+                ),
+                max_output_tokens=_ant_max,
+            ),
+        )
+
     return _ct.build_kwargs(
         model=agent.model,
         messages=_msgs_for_chat,
         tools=tools_for_api,
         base_url=agent.base_url,
         timeout=agent._resolved_api_call_timeout(),
-        max_tokens=agent.max_tokens,
+        max_tokens=_legacy_max_tokens,
         ephemeral_max_output_tokens=_ephemeral_out,
         max_tokens_param_fn=agent._max_tokens_param,
         reasoning_config=agent.reasoning_config,
