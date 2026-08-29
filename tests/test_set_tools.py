@@ -66,6 +66,43 @@ def test_set_tools_skips_malformed_schema_without_raising():
     assert agent.valid_tool_names == {"checklist_create"}
 
 
+def test_set_tools_publishes_under_shared_lock_and_bumps_generation():
+    """set_tools must join the same atomic-publish protocol
+    refresh_agent_mcp_tools uses (tools/mcp_tool.py), not invent its own —
+    same lock instance, and _tool_snapshot_generation advanced to at least
+    the current registry generation so a concurrent refresh computed from
+    an older generation can't win a race against this publish."""
+    import tools.mcp_tool as mcp_tool
+    from tools.registry import registry as _registry
+
+    agent = AIAgent(model="dummy", base_url="http://localhost:1", api_key="x",
+                    max_tokens=16, skip_memory=True, skip_context_files=True,
+                    quiet_mode=True)
+
+    calls = []
+    real_lock = mcp_tool._agent_tools_lock
+
+    class _TrackingLock:
+        def __enter__(self):
+            calls.append("enter")
+            return real_lock.__enter__()
+
+        def __exit__(self, *a):
+            calls.append("exit")
+            return real_lock.__exit__(*a)
+
+    tracking = _TrackingLock()
+    orig = mcp_tool._agent_tools_lock
+    mcp_tool._agent_tools_lock = tracking
+    try:
+        agent.set_tools([DEF])
+    finally:
+        mcp_tool._agent_tools_lock = orig
+
+    assert calls == ["enter", "exit"], "set_tools did not publish under tools.mcp_tool._agent_tools_lock"
+    assert agent._tool_snapshot_generation >= _registry._generation
+
+
 # ── End-to-end proof: a newly-bound tool's call actually dispatches ──
 #
 # The trap this method exists to fix is silent: the model calls the tool and
