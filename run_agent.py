@@ -4614,6 +4614,22 @@ class AIAgent:
         except Exception:
             pass
 
+    def set_tools(self, defs: list) -> None:
+        """Request-scoped tool binding. Sets tools and valid_tool_names
+        together — rebinding .tools alone advertises schemas whose calls
+        the loop then rejects (valid_tool_names is frozen at init).
+
+        Not thread-safe against a concurrent MCP refresh
+        (``tools.mcp_tool.refresh_agent_mcp_tools``) on the same agent —
+        callers must serialize this with any in-flight turn, e.g. by
+        calling it only at a turn boundary.
+        """
+        self.tools = list(defs)
+        self.valid_tool_names = {
+            t["function"]["name"] for t in self.tools
+            if isinstance(t, dict) and t.get("function", {}).get("name")
+        }
+
     def close(self, end_session: bool = True) -> None:
         """Release all resources held by this agent instance.
 
