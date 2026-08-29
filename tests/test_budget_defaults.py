@@ -21,6 +21,8 @@ import os
 import sys
 from unittest.mock import patch
 
+import pytest
+
 from run_agent import AIAgent
 
 
@@ -101,3 +103,41 @@ def test_context_switch_guard_uses_override():
         # threshold_percent small enough that the floor, not the percentage,
         # determines the result.
         assert _threshold_tokens(2000, threshold_percent=0.1) == 1000
+
+
+# agent_init.py's main-model context-floor gate (agent/agent_init.py, "Reject
+# models whose context window is below the minimum required"). This is the
+# hard `raise ValueError` that refuses to CONSTRUCT an AIAgent at all — the
+# single most load-bearing site for Grid, which builds a fresh AIAgent per
+# HTTP request against a model whose real window sits between 44K and 64K.
+# There was no existing test anywhere in the suite for this gate's error path
+# at all (grep -rn "is below the minimum\|has a context window of" tests/
+# found nothing outside conversation_compression.py's aux-model test), so
+# these two also close that pre-existing gap.
+#
+# ContextCompressor.context_length is a deferred property (#32221) resolved
+# via agent.context_compressor.get_model_context_length() on first access, so
+# patching that name (not agent.model_metadata's copy, which context_compressor.py
+# imported by value at module load) is what actually controls the resolved
+# window here — matching the pattern already used by
+# tests/agent/test_context_compressor_summary_continuity.py.
+
+@patch("agent.context_compressor.get_model_context_length", return_value=50_000)
+def test_agent_init_rejects_main_model_below_minimum_context(mock_ctx_len):
+    """Default floor (64K): a 50K-token model is rejected at construction."""
+    with pytest.raises(ValueError) as exc_info:
+        _make_agent()
+    err = str(exc_info.value)
+    assert "50,000" in err
+    assert "64,000" in err
+    assert "below the minimum" in err
+
+
+@patch("agent.context_compressor.get_model_context_length", return_value=50_000)
+def test_agent_init_override_allows_main_model_construction(mock_ctx_len):
+    """The same 50K-token model that's rejected above must construct
+    cleanly once HERMES_MINIMUM_CONTEXT_LENGTH lowers the floor beneath it —
+    proving the override actually reaches this gate's outcome."""
+    with patch.dict(os.environ, {"HERMES_MINIMUM_CONTEXT_LENGTH": "44000"}):
+        agent = _make_agent()  # must not raise
+    assert agent.context_compressor.context_length == 50_000

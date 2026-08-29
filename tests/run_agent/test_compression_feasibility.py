@@ -8,6 +8,7 @@ Two-phase design:
      status_callback (gateway platforms)
 """
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -133,6 +134,32 @@ def test_rejects_aux_below_minimum_context(mock_get_client, mock_ctx_len):
     assert "32,768" in err
     assert "64,000" in err
     assert "below the minimum" in err
+
+
+@patch("agent.model_metadata.get_model_context_length", return_value=32_768)
+@patch("agent.auxiliary_client.get_text_auxiliary_client")
+def test_override_widens_aux_minimum_context_gate(mock_get_client, mock_ctx_len):
+    """Task A8: HERMES_MINIMUM_CONTEXT_LENGTH lowers the hard floor. The same
+    32,768-token aux model that test_rejects_aux_below_minimum_context shows
+    is rejected at the default 64K floor must be ACCEPTED once the override
+    floor sits at or below its context — proving the override actually
+    reaches this gate's outcome, not just that the default still rejects."""
+    agent = _make_agent(main_context=200_000, threshold_percent=0.50)
+    mock_client = MagicMock()
+    mock_client.base_url = "https://openrouter.ai/api/v1"
+    mock_client.api_key = "sk-aux"
+    mock_get_client.return_value = (mock_client, "tiny-aux-model")
+
+    agent._emit_status = lambda msg: None
+
+    with patch.dict(os.environ, {"HERMES_MINIMUM_CONTEXT_LENGTH": "30000"}):
+        agent._check_compression_model_feasibility()  # must not raise
+
+    # Below-threshold auto-correction (a separate, unrelated code path) still
+    # applies since 32,768 < the 100,000 threshold — confirms the gate we're
+    # testing is the hard floor, not a side effect of some other check
+    # swallowing the rejection.
+    assert agent.context_compressor.threshold_tokens == 32_768
 
 
 
