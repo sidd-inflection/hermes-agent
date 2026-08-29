@@ -100,7 +100,14 @@ def test_set_tools_publishes_under_shared_lock_and_bumps_generation():
         mcp_tool._agent_tools_lock = orig
 
     assert calls == ["enter", "exit"], "set_tools did not publish under tools.mcp_tool._agent_tools_lock"
-    assert agent._tool_snapshot_generation >= _registry._generation
+
+    # Force a stale generation so the assertion actually discriminates: without
+    # this, agent_init already set _tool_snapshot_generation == registry._generation
+    # at construction time and an unrelated set_tools that never touches the
+    # counter would pass the same assertion.
+    agent._tool_snapshot_generation = _registry._generation - 1
+    agent.set_tools([DEF])
+    assert agent._tool_snapshot_generation == _registry._generation
 
 
 # ── End-to-end proof: a newly-bound tool's call actually dispatches ──

@@ -4630,8 +4630,15 @@ class AIAgent:
         Publishes under the same ``_agent_tools_lock`` /
         ``_tool_snapshot_generation`` protocol ``refresh_agent_mcp_tools``
         uses, so a concurrent reader never sees a cross-attribute
-        half-swap and a concurrent MCP refresh captured against an older
-        registry generation can't win a race against this publish.
+        half-swap, and a concurrent MCP refresh captured against an
+        *older* registry generation can't win a race against this
+        publish. A refresh that captured the *same* generation is not
+        resolved in this call's favor (the shared protocol's check is
+        strict ``<``, matching ties the same way two racing
+        ``refresh_agent_mcp_tools`` calls would) — if that race is lost,
+        this request-scoped, filtered surface (persona exclusions, memory
+        gates, feature flags) gets replaced by a plain registry-derived
+        list carrying none of that filtering.
         """
         from tools.mcp_tool import _agent_tools_lock
         from tools.registry import registry as _registry
@@ -4644,9 +4651,10 @@ class AIAgent:
         with _agent_tools_lock:
             self.tools = new_tools
             self.valid_tool_names = new_names
-            self._tool_snapshot_generation = max(
-                getattr(self, "_tool_snapshot_generation", 0), _registry._generation
-            )
+            _published_gen = getattr(self, "_tool_snapshot_generation", 0)
+            if not isinstance(_published_gen, int):
+                _published_gen = 0
+            self._tool_snapshot_generation = max(_published_gen, _registry._generation)
 
     def close(self, end_session: bool = True) -> None:
         """Release all resources held by this agent instance.
