@@ -128,8 +128,13 @@ from hermes_cli.timeouts import (
 def _is_embedded() -> bool:
     return os.environ.get("HERMES_EMBEDDED", "").strip().lower() in {"1", "true", "yes"}
 
+# Always bound: agent_init.setup_logging() reads run_agent._hermes_home
+# unconditionally, regardless of HERMES_EMBEDDED. get_hermes_home() is pure
+# path resolution (no directories created, no env mutation), so it never
+# needed the embedded guard — only the .env autoload below does.
+_hermes_home = get_hermes_home()
+
 if not _is_embedded():
-    _hermes_home = get_hermes_home()
     _project_env = Path(__file__).parent / '.env'
     _loaded_env_paths = load_hermes_dotenv(hermes_home=_hermes_home, project_env=_project_env)
     if _loaded_env_paths:

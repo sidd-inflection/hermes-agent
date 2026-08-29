@@ -77,3 +77,30 @@ def test_embedded_import_still_creates_hermes_home_skeleton():
     _, home = _run(embedded=True)
     created = {p.name for p in Path(home).iterdir()} - {".env"}
     assert "memories" in created and "pairing" in created
+
+_AGENT_CONSTRUCTION_SNIPPET = """
+import run_agent
+agent = run_agent.AIAgent(model="dummy", base_url="http://localhost:1", api_key="x",
+                           max_tokens=16, skip_memory=True, skip_context_files=True,
+                           quiet_mode=True)
+print("AGENT_OK")
+"""
+
+def test_embedded_agent_construction_succeeds():
+    """Regression for A12: agent_init.py's agent construction path calls
+    setup_logging(hermes_home=run_agent._hermes_home) unconditionally
+    (agent/agent_init.py ~line 1097), with no HERMES_EMBEDDED check of its
+    own. A2's guard moved the `_hermes_home = get_hermes_home()` assignment
+    inside `if not _is_embedded():`, so under HERMES_EMBEDDED=1 the
+    attribute was never bound and every AIAgent(...) construction raised
+    AttributeError: module 'run_agent' has no attribute '_hermes_home'.
+
+    Before this task's fix, this test fails RED with exactly that
+    AttributeError surfaced through the subprocess's stderr/returncode.
+    """
+    home = tempfile.mkdtemp()
+    env = {**os.environ, "HERMES_HOME": home, "HERMES_EMBEDDED": "1"}
+    out = subprocess.run([sys.executable, "-c", _AGENT_CONSTRUCTION_SNIPPET], env=env,
+                         capture_output=True, text=True, timeout=120)
+    assert out.returncode == 0, out.stderr
+    assert "AGENT_OK" in out.stdout
