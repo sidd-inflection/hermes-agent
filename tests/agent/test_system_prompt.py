@@ -496,9 +496,17 @@ class TestMemoryProviderSystemPromptGating:
     @staticmethod
     def _make_fake_manager(prompt_block: str):
         """Build a MemoryManager-like object exposing only what
-        ``build_system_prompt_parts`` touches."""
+        ``build_system_prompt_parts`` touches.
+
+        This class exercises the config.yaml (non-host-injected) toolset
+        gate, so ``host_injected`` is pinned to False -- left as a bare
+        MagicMock attribute it auto-vivifies truthy, which would silently
+        take the host-injected exemption path (grid/v1 Task 36) instead of
+        the toolset gate these tests are about.
+        """
         from unittest.mock import MagicMock
         mgr = MagicMock()
+        mgr.host_injected = False
         mgr.build_system_prompt.return_value = prompt_block
         return mgr
 
