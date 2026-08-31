@@ -20,7 +20,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.chat_completion_helpers import resolve_max_tokens
+from agent.chat_completion_helpers import (
+    DEFAULT_MAX_OUTPUT_TOKENS,
+    resolve_max_tokens,
+)
 from agent.conversation_loop import _raise_if_max_tokens_config_error
 
 
@@ -41,6 +44,20 @@ def test_metadata_output_cap_wins():
     class M(FakeMeta):
         max_output_tokens = 4096
     assert resolve_max_tokens(None, M()) == 4096
+
+
+def test_no_metadata_fallback_is_the_output_ceiling_not_ceiling_over_four():
+    """I17: with no requested value and no context_length, the no-metadata
+    path must land on DEFAULT_MAX_OUTPUT_TOKENS itself (a safe output
+    budget), not on DEFAULT_MAX_OUTPUT_TOKENS substituted as a fake context
+    length and then divided by CONTEXT_LENGTH_OUTPUT_DIVISOR — that
+    misreads an OUTPUT ceiling as a context length and silently halves it
+    again, yielding 2048 instead of the documented 8192."""
+    class NoMeta:
+        context_length = None
+        max_output_tokens = None
+
+    assert resolve_max_tokens(None, NoMeta()) == DEFAULT_MAX_OUTPUT_TOKENS
 
 
 # ---------------------------------------------------------------------------

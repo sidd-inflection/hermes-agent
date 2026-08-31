@@ -1837,7 +1837,9 @@ def resolve_max_tokens(requested: int | None, metadata: Any) -> int:
     out_cap = getattr(metadata, "max_output_tokens", None)
     if out_cap:
         return out_cap
-    ctx = getattr(metadata, "context_length", None) or DEFAULT_MAX_OUTPUT_TOKENS
+    ctx = getattr(metadata, "context_length", None)
+    if not ctx:
+        return DEFAULT_MAX_OUTPUT_TOKENS
     return min(ctx // CONTEXT_LENGTH_OUTPUT_DIVISOR, DEFAULT_MAX_OUTPUT_TOKENS)
 
 
