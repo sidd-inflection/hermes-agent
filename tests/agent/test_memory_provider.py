@@ -8,7 +8,11 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from agent.memory_provider import MemoryProvider
-from agent.memory_manager import MemoryManager, inject_memory_provider_tools
+from agent.memory_manager import (
+    MemoryManager,
+    inject_memory_provider_tools,
+    memory_provider_tools_exposed,
+)
 
 # ---------------------------------------------------------------------------
 # Concrete test provider
@@ -1190,6 +1194,52 @@ class TestMemoryToolToolsetGate:
         mgr = self._mgr_with_tools("fact_store", "memory_search", "memory_add")
         tools, names = self._run_memory_injection(None, mgr)
         assert names == {"fact_store", "memory_search", "memory_add"}
+
+
+class TestHostInjectedProviderKeepsExemptionWithSchemas:
+    """A host-injected provider (agent_init.py's memory_provider= path, e.g.
+    Grid's GridMemoryProvider) keeps the #81014 host-injected exemption even
+    when it exposes real tool schemas.
+
+    The #81014 rationale ("don't advertise tools not in the surface") is
+    vacuous for a host-injected provider: inject_memory_provider_tools puts
+    that same provider's schemas into agent.tools two calls later regardless
+    of memory_provider_tools_exposed()'s return value here. Denying the
+    exemption at non-empty schemas only ever suppressed the system-prompt
+    block for a host-injected provider that has actual tools -- never what
+    an embedding host wants when it wires a provider in directly. Without
+    this, a host-injected provider with schemas loses BOTH its tools (the
+    toolset gate below, which the host's own enabled_toolsets need not name
+    "memory") AND its system-prompt block.
+    """
+
+    def test_exemption_granted_and_tools_injected_with_non_empty_schemas(self):
+        mgr = MemoryManager()
+        mgr.host_injected = True
+        p = FakeMemoryProvider(
+            "ext",
+            tools=[
+                {"name": n, "description": n, "parameters": {}}
+                for n in ("fact_store", "fact_search", "profile_get", "profile_set")
+            ],
+        )
+        mgr.add_provider(p)
+        fake_agent = SimpleNamespace(
+            _memory_manager=mgr,
+            enabled_toolsets=["grid", "web", "skills"],
+            disabled_toolsets=None,
+            tools=[],
+            valid_tool_names=set(),
+        )
+
+        assert memory_provider_tools_exposed(fake_agent) is True
+
+        added = inject_memory_provider_tools(fake_agent)
+
+        assert added == 4
+        assert {t["function"]["name"] for t in fake_agent.tools} == {
+            "fact_store", "fact_search", "profile_get", "profile_set",
+        }
 
 
 class TestContextEngineToolsetGate:

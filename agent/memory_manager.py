@@ -120,20 +120,22 @@ def memory_provider_tools_exposed(agent: Any) -> bool:
     that don't exist in the tool surface (#81014).
     """
     manager = getattr(agent, "_memory_manager", None)
-    if (
-        manager is not None
-        and getattr(manager, "host_injected", False)
-        and not manager.get_all_tool_schemas()
-    ):
+    if manager is not None and getattr(manager, "host_injected", False):
         # An embedding host explicitly injected this provider instance (see
         # agent_init.py's memory_provider= path) -- the host's own toolset
         # config is not the authority on a provider it wired in-process
-        # itself, and it has no tool schemas to advertise, so the #81014
-        # rationale ("don't advertise tools not in the surface") is vacuous
-        # here. A provider selected via config.yaml (memory.provider) still
-        # goes through the toolset gate below even at zero schemas -- an
-        # operator's disabled_toolsets=["memory"] must keep suppressing it
-        # (#5544/#81014).
+        # itself, so the #81014 rationale ("don't advertise tools not in the
+        # surface") is vacuous here regardless of schema count:
+        # inject_memory_provider_tools() puts this same manager's schemas
+        # into agent.tools two calls later no matter what this function
+        # returns for a host-injected manager, so gating on "and not
+        # manager.get_all_tool_schemas()" only ever suppressed the
+        # system-prompt block for a host-injected provider that has real
+        # tools -- never what an embedding host wants when it wires a
+        # provider in directly. A provider selected via config.yaml
+        # (memory.provider) still goes through the toolset gate below even
+        # at zero schemas -- an operator's disabled_toolsets=["memory"] must
+        # keep suppressing it (#5544/#81014).
         return True
 
     tools = getattr(agent, "tools", None)
