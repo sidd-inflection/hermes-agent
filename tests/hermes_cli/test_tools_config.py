@@ -1130,6 +1130,58 @@ def test_platforms_whose_composite_excludes_it_are_left_narrow():
         assert not (_RECENTLY_SHIPPED_TOOLSETS & enabled), platform
 
 
+# M35: the back-fill must be keyed to the toolset it was carved out of, not
+# just to the platform composite — otherwise an explicit opt-out of the
+# parent (recorded before the split existed, so it can't yet name the child)
+# gets silently overridden the first time the child is offered.
+
+
+def _pre_split_declined_catalog(platform="cli", *, without=()):
+    """A saved explicit list as it looked before skills_write existed,
+    optionally with some parent toolsets already unchecked."""
+    from hermes_cli.tools_config import (
+        _CONFIG_ONLY_TOOLSETS,
+        _toolset_allowed_for_platform,
+    )
+
+    catalog = sorted(
+        ts_key
+        for ts_key, _, _ in CONFIGURABLE_TOOLSETS
+        if ts_key != "skills_write"
+        and ts_key not in _DEFAULT_OFF_TOOLSETS
+        and ts_key not in _CONFIG_ONLY_TOOLSETS
+        and _toolset_allowed_for_platform(ts_key, platform)
+    )
+    saved = [ts for ts in catalog if ts not in without]
+    return {
+        "platform_toolsets": {platform: saved},
+        "known_builtin_toolsets": {platform: catalog},
+    }
+
+
+def test_declined_parent_toolset_blocks_child_backfill():
+    """The bug: a CLI user who ran `hermes tools` and unchecked "📚 Skills"
+    before skills_write was carved out of it gets skill_manage — a
+    filesystem-write tool — silently restored on upgrade, because the
+    back-fill only checked the platform composite, never the parent."""
+    config = _pre_split_declined_catalog(without=("skills",))
+
+    enabled = _get_platform_tools(config, "cli", include_default_mcp_servers=False)
+
+    assert "skills_write" not in enabled
+
+
+def test_enabled_parent_toolset_still_backfills_child():
+    """The parity case this mechanism exists for: Skills stayed checked, so
+    skills_write is still back-filled for anyone whose composite already
+    carried it."""
+    config = _pre_split_declined_catalog()
+
+    enabled = _get_platform_tools(config, "cli", include_default_mcp_servers=False)
+
+    assert "skills_write" in enabled
+
+
 # Regression for issue #81163 (Layer 2): an explicitly-listed plugin toolset
 # in ``platform_toolsets.<platform>`` must survive the filter, not be dropped
 # because it isn't a built-in CONFIGURABLE_TOOLSETS entry.

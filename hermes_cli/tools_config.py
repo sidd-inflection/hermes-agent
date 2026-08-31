@@ -2599,6 +2599,12 @@ def _exempt_explicit_platform_native(
 #: docstring above.
 _RECENTLY_SHIPPED_TOOLSETS: frozenset = frozenset({"skills_write"})
 
+#: A toolset split out of a parent is back-filled ONLY where the parent is
+#: still enabled — an explicit opt-out of the parent covers its children,
+#: even when the saved list predates the split and so can't yet name them
+#: (M35).
+_RECENTLY_SHIPPED_TOOLSET_PARENTS: dict = {"skills_write": "skills"}
+
 
 def _enable_recently_shipped_toolsets(
     enabled_toolsets: Set[str], config: dict, platform: str
@@ -2621,6 +2627,9 @@ def _enable_recently_shipped_toolsets(
 
     for ts_key in sorted(_RECENTLY_SHIPPED_TOOLSETS):
         if ts_key in enabled_toolsets or ts_key in declined:
+            continue
+        parent = _RECENTLY_SHIPPED_TOOLSET_PARENTS.get(ts_key)
+        if parent is not None and parent not in enabled_toolsets:
             continue
         if not _toolset_allowed_for_platform(ts_key, platform):
             continue
